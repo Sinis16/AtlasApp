@@ -1,8 +1,7 @@
 package com.example.atlas.navigation
 
-import android.os.Build
-import androidx.annotation.RequiresApi
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -18,7 +17,6 @@ import com.example.atlas.ui.screens.LogInScreen
 import com.example.atlas.ui.screens.RegisterScreen
 import com.example.atlas.ui.screens.TagScreen
 
-@RequiresApi(Build.VERSION_CODES.S)
 @Composable
 fun AppNavHost(
     navController: NavHostController,
@@ -26,7 +24,9 @@ fun AppNavHost(
     bleScanManager: BleScanManager,
     foundDevices: MutableList<BleDevice>,
     connectionStates: SnapshotStateMap<String, String>,
-    onConnect: (String) -> Unit
+    savedDeviceAddress: MutableState<String?>,
+    onConnect: (String) -> Unit,
+    onDisconnect: (String) -> Unit
 ) {
     NavHost(navController = navController, startDestination = "logIn") {
         composable("logIn") {
@@ -45,7 +45,9 @@ fun AppNavHost(
                 bleScanManager = bleScanManager,
                 foundDevices = foundDevices,
                 connectionStates = connectionStates,
-                onConnect = onConnect
+                savedDeviceAddress = savedDeviceAddress,
+                onConnect = onConnect,
+                onDisconnect = onDisconnect
             )
         }
         composable(

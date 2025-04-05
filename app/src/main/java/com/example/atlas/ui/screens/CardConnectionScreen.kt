@@ -33,7 +33,9 @@ fun CardConnectionScreen(
     bleScanManager: BleScanManager,
     foundDevices: MutableList<BleDevice>,
     connectionStates: SnapshotStateMap<String, String>,
-    onConnect: (String) -> Unit
+    savedDeviceAddress: MutableState<String?>,
+    onConnect: (String) -> Unit,
+    onDisconnect: (String) -> Unit
 ) {
     var isScanning by remember { mutableStateOf(false) }
     var showRationaleDialog by remember { mutableStateOf(false) }
@@ -65,6 +67,57 @@ fun CardConnectionScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Top
     ) {
+        // Show connected devices with Disconnect button
+        val connectedDevices = connectionStates.filter { it.value == "Connected" }.keys
+        LaunchedEffect(connectionStates) {
+            Log.d("CardConnectionScreen", "connectionStates changed: $connectionStates")
+            Log.d("CardConnectionScreen", "Connected devices: $connectedDevices")
+        }
+        if (connectedDevices.isNotEmpty()) {
+            Text(
+                text = "Connected Devices:",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            connectedDevices.forEach { address ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 8.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row {
+                        Text(
+                            text = address,
+                            fontSize = 14.sp
+                        )
+                        foundDevices.find { it.address == address }?.name?.let { name ->
+                            Text(
+                                text = " ($name)",
+                                fontSize = 14.sp,
+                                modifier = Modifier.padding(start = 4.dp)
+                            )
+                        }
+                    }
+                    Button(
+                        onClick = { onDisconnect(address) },
+                        modifier = Modifier.size(width = 100.dp, height = 36.dp)
+                    ) {
+                        Text("Disconnect")
+                    }
+                }
+            }
+        } else {
+            Text(
+                text = "No devices connected",
+                fontSize = 16.sp,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+        }
+
+        // Start Scan button
         Button(
             onClick = {
                 if (!isScanning) {
@@ -77,8 +130,17 @@ fun CardConnectionScreen(
             Text(text = if (isScanning) "Scanning..." else "Start Scan")
         }
 
+        // Show saved device status
+        savedDeviceAddress.value?.let { address ->
+            Text(
+                text = "Last Connected Device: $address",
+                fontSize = 16.sp,
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        }
+
         if (foundDevices.isEmpty()) {
-            Text(text = "No devices found", fontSize = 16.sp)
+            Text(text = "No devices found", fontSize = 16.sp, modifier = Modifier.padding(top = 8.dp))
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxWidth()
@@ -87,6 +149,7 @@ fun CardConnectionScreen(
                     DeviceItem(
                         device = device,
                         connectionState = connectionStates[device.address] ?: "Disconnected",
+                        isSavedDevice = device.address == savedDeviceAddress.value,
                         onConnect = onConnect
                     )
                 }
@@ -130,6 +193,7 @@ fun CardConnectionScreen(
 fun DeviceItem(
     device: BleDevice,
     connectionState: String,
+    isSavedDevice: Boolean,
     onConnect: (String) -> Unit
 ) {
     Row(
@@ -143,7 +207,7 @@ fun DeviceItem(
             Text(text = "Address: ${device.address}", fontSize = 16.sp, fontWeight = FontWeight.Bold)
             Text(text = "Name: ${device.name ?: "Unknown"}", fontSize = 14.sp)
             Text(text = "RSSI: ${device.rssi ?: "N/A"} dBm", fontSize = 14.sp)
-            Text(text = "Status: $connectionState", fontSize = 14.sp)
+            Text(text = "Status: $connectionState" + if (isSavedDevice) " (Saved)" else "", fontSize = 14.sp)
         }
         Button(
             onClick = { onConnect(device.address) },

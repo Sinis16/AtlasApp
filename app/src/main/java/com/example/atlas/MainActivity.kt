@@ -4,6 +4,7 @@ import android.Manifest
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCallback
 import android.bluetooth.BluetoothManager
+import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -93,30 +94,44 @@ class MainActivity : ComponentActivity() {
                     permissionManager.dispatchOnRequestPermissionsResult(1, grantResults)
                 }
 
-                // Connection state map and callback
-                val connectionStates = remember { mutableStateMapOf<String, String>() } // address -> status
-                val gattConnections = remember { mutableMapOf<String, BluetoothGatt>() } // address -> gatt
+                val connectionStates = remember { mutableStateMapOf<String, String>() }
+                val gattConnections = remember { mutableMapOf<String, BluetoothGatt>() }
+
+                val prefs = getSharedPreferences("AtlasPrefs", Context.MODE_PRIVATE)
+                val savedDeviceAddress = remember { mutableStateOf(prefs.getString("connectedDevice", null)) }
 
                 val gattCallback = remember {
                     object : BluetoothGattCallback() {
                         @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
                         override fun onConnectionStateChange(gatt: BluetoothGatt?, status: Int, newState: Int) {
                             val address = gatt?.device?.address ?: return
+                            Log.d(TAG, "Gatt callback for $address: status=$status, newState=$newState")
                             when (newState) {
                                 BluetoothGatt.STATE_CONNECTED -> {
                                     Log.d(TAG, "Connected to $address")
                                     connectionStates[address] = "Connected"
+                                    prefs.edit().putString("connectedDevice", address).apply()
+                                    savedDeviceAddress.value = address
                                 }
                                 BluetoothGatt.STATE_DISCONNECTED -> {
                                     Log.d(TAG, "Disconnected from $address")
                                     connectionStates[address] = "Disconnected"
                                     gattConnections.remove(address)?.close()
+                                    if (savedDeviceAddress.value == address) {
+                                        prefs.edit().remove("connectedDevice").apply()
+                                        savedDeviceAddress.value = null
+                                    }
                                 }
                                 BluetoothGatt.STATE_CONNECTING -> {
                                     Log.d(TAG, "Connecting to $address")
                                     connectionStates[address] = "Connecting"
                                 }
+                                BluetoothGatt.STATE_DISCONNECTING -> {
+                                    Log.d(TAG, "Disconnecting from $address")
+                                    connectionStates[address] = "Disconnecting"
+                                }
                             }
+                            Log.d(TAG, "Current connectionStates: $connectionStates")
                         }
                     }
                 }
@@ -143,6 +158,7 @@ class MainActivity : ComponentActivity() {
                         bleScanManager = bleScanManager,
                         foundDevices = foundDevices,
                         connectionStates = connectionStates,
+                        savedDeviceAddress = savedDeviceAddress,
                         onConnect = { address ->
                             if (ActivityCompat.checkSelfPermission(
                                     this@MainActivity,
@@ -151,12 +167,42 @@ class MainActivity : ComponentActivity() {
                             ) {
                                 val device = btManager.adapter?.getRemoteDevice(address)
                                 if (device != null && connectionStates[address] != "Connected") {
+                                    // Clean up any existing connection
+                                    gattConnections[address]?.let { oldGatt ->
+                                        Log.d(TAG, "Cleaning up old GATT for $address")
+                                        oldGatt.disconnect()
+                                        oldGatt.close()
+                                        gattConnections.remove(address)
+                                    }
                                     val gatt = device.connectGatt(this@MainActivity, false, gattCallback)
                                     gattConnections[address] = gatt
                                     connectionStates[address] = "Connecting"
+                                    Log.d(TAG, "Initiating connection to $address, GATT created")
+                                } else {
+                                    Log.w(TAG, "Device null or already connected: $address")
                                 }
                             } else {
                                 Log.w(TAG, "BLUETOOTH_CONNECT permission missing")
+                            }
+                        },
+                        onDisconnect = { address ->
+                            if (ActivityCompat.checkSelfPermission(
+                                    this@MainActivity,
+                                    Manifest.permission.BLUETOOTH_CONNECT
+                                ) == PackageManager.PERMISSION_GRANTED
+                            ) {
+                                gattConnections[address]?.let { gatt ->
+                                    Log.d(TAG, "Disconnecting $address")
+                                    gatt.disconnect()
+                                    gatt.close()
+                                    gattConnections.remove(address)
+                                    connectionStates[address] = "Disconnected"
+                                } ?: run {
+                                    Log.w(TAG, "No GATT found for $address, forcing state to Disconnected")
+                                    connectionStates[address] = "Disconnected"
+                                }
+                            } else {
+                                Log.w(TAG, "BLUETOOTH_CONNECT permission missing for disconnect")
                             }
                         }
                     )
