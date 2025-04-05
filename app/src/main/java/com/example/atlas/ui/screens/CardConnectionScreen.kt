@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -18,7 +19,6 @@ import com.example.atlas.MainActivity
 import com.example.atlas.blescanner.BleScanManager
 import com.example.atlas.blescanner.model.BleDevice
 import com.example.atlas.permissions.PermissionManager
-import com.example.atlas.permissions.dispatcher.DispatcherEntry
 import com.example.atlas.permissions.dispatcher.dsl.checkPermissions
 import com.example.atlas.permissions.dispatcher.dsl.doOnDenied
 import com.example.atlas.permissions.dispatcher.dsl.doOnGranted
@@ -31,13 +31,14 @@ fun CardConnectionScreen(
     navController: NavHostController,
     permissionManager: PermissionManager,
     bleScanManager: BleScanManager,
-    foundDevices: MutableList<BleDevice>
+    foundDevices: MutableList<BleDevice>,
+    connectionStates: SnapshotStateMap<String, String>,
+    onConnect: (String) -> Unit
 ) {
     var isScanning by remember { mutableStateOf(false) }
     var showRationaleDialog by remember { mutableStateOf(false) }
     var rationaleMessage by remember { mutableStateOf("") }
 
-    // Configure PermissionManager
     LaunchedEffect(Unit) {
         permissionManager.buildRequestResultsDispatcher {
             withRequestCode(1) {
@@ -83,13 +84,16 @@ fun CardConnectionScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 items(foundDevices) { device ->
-                    DeviceItem(device)
+                    DeviceItem(
+                        device = device,
+                        connectionState = connectionStates[device.address] ?: "Disconnected",
+                        onConnect = onConnect
+                    )
                 }
             }
         }
     }
 
-    // Rationale dialog
     if (showRationaleDialog) {
         AlertDialog(
             onDismissRequest = { showRationaleDialog = false },
@@ -107,7 +111,6 @@ fun CardConnectionScreen(
         )
     }
 
-    // Manage scanning state
     LaunchedEffect(bleScanManager) {
         bleScanManager.beforeScanActions.clear()
         bleScanManager.afterScanActions.clear()
@@ -124,14 +127,29 @@ fun CardConnectionScreen(
 }
 
 @Composable
-fun DeviceItem(device: BleDevice) {
-    Column(
+fun DeviceItem(
+    device: BleDevice,
+    connectionState: String,
+    onConnect: (String) -> Unit
+) {
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(8.dp)
+            .padding(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(text = "Address: ${device.address}", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-        Text(text = "Name: ${device.name ?: "Unknown"}", fontSize = 14.sp)
-        Text(text = "RSSI: ${device.rssi ?: "N/A"} dBm", fontSize = 14.sp)
+        Column {
+            Text(text = "Address: ${device.address}", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Text(text = "Name: ${device.name ?: "Unknown"}", fontSize = 14.sp)
+            Text(text = "RSSI: ${device.rssi ?: "N/A"} dBm", fontSize = 14.sp)
+            Text(text = "Status: $connectionState", fontSize = 14.sp)
+        }
+        Button(
+            onClick = { onConnect(device.address) },
+            enabled = connectionState != "Connecting" && connectionState != "Connected"
+        ) {
+            Text("Connect")
+        }
     }
 }

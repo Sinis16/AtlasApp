@@ -1,6 +1,8 @@
 package com.example.atlas
 
 import android.Manifest
+import android.bluetooth.BluetoothGatt
+import android.bluetooth.BluetoothGattCallback
 import android.bluetooth.BluetoothManager
 import android.content.pm.PackageManager
 import android.os.Build
@@ -11,6 +13,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresApi
+import androidx.annotation.RequiresPermission
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
@@ -32,18 +35,14 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Initialize non-Compose components
         btManager = getSystemService(BluetoothManager::class.java)
         permissionManager = PermissionManager(this)
 
         setContent {
             AtlasTheme {
                 val navController = rememberNavController()
-
-                // Create a reactive list for found devices
                 val foundDevices = remember { mutableStateListOf<BleDevice>() }
 
-                // Initialize BleScanManager
                 val bleScanManager = remember {
                     BleScanManager(btManager, 5000, scanCallback = BleScanCallback({
                         val address = it?.device?.address
@@ -55,11 +54,11 @@ class MainActivity : ComponentActivity() {
                         val hasScanPermission = ActivityCompat.checkSelfPermission(
                             this@MainActivity,
                             Manifest.permission.BLUETOOTH_SCAN
-                        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                        ) == PackageManager.PERMISSION_GRANTED
                         val hasConnectPermission = ActivityCompat.checkSelfPermission(
                             this@MainActivity,
                             Manifest.permission.BLUETOOTH_CONNECT
-                        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                        ) == PackageManager.PERMISSION_GRANTED
 
                         val name: String?
                         val rssi: Int?
@@ -86,7 +85,6 @@ class MainActivity : ComponentActivity() {
                     }))
                 }
 
-                // Permission launcher
                 val permissionLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.RequestMultiplePermissions()
                 ) { permissions ->
@@ -95,14 +93,41 @@ class MainActivity : ComponentActivity() {
                     permissionManager.dispatchOnRequestPermissionsResult(1, grantResults)
                 }
 
-                // Mocked states for now, replace with actual logic
+                // Connection state map and callback
+                val connectionStates = remember { mutableStateMapOf<String, String>() } // address -> status
+                val gattConnections = remember { mutableMapOf<String, BluetoothGatt>() } // address -> gatt
+
+                val gattCallback = remember {
+                    object : BluetoothGattCallback() {
+                        @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+                        override fun onConnectionStateChange(gatt: BluetoothGatt?, status: Int, newState: Int) {
+                            val address = gatt?.device?.address ?: return
+                            when (newState) {
+                                BluetoothGatt.STATE_CONNECTED -> {
+                                    Log.d(TAG, "Connected to $address")
+                                    connectionStates[address] = "Connected"
+                                }
+                                BluetoothGatt.STATE_DISCONNECTED -> {
+                                    Log.d(TAG, "Disconnected from $address")
+                                    connectionStates[address] = "Disconnected"
+                                    gattConnections.remove(address)?.close()
+                                }
+                                BluetoothGatt.STATE_CONNECTING -> {
+                                    Log.d(TAG, "Connecting to $address")
+                                    connectionStates[address] = "Connecting"
+                                }
+                            }
+                        }
+                    }
+                }
+
                 var isLoggedIn by remember { mutableStateOf(false) }
                 var isConnected by remember { mutableStateOf(false) }
 
                 LaunchedEffect(Unit) {
                     if (!isLoggedIn) {
                         navController.navigate("logIn") {
-                            popUpTo(0)  // Clear stack
+                            popUpTo(0)
                         }
                     } else if (!isConnected) {
                         navController.navigate("connection") {
@@ -116,7 +141,24 @@ class MainActivity : ComponentActivity() {
                         navController = navController,
                         permissionManager = permissionManager,
                         bleScanManager = bleScanManager,
-                        foundDevices = foundDevices
+                        foundDevices = foundDevices,
+                        connectionStates = connectionStates,
+                        onConnect = { address ->
+                            if (ActivityCompat.checkSelfPermission(
+                                    this@MainActivity,
+                                    Manifest.permission.BLUETOOTH_CONNECT
+                                ) == PackageManager.PERMISSION_GRANTED
+                            ) {
+                                val device = btManager.adapter?.getRemoteDevice(address)
+                                if (device != null && connectionStates[address] != "Connected") {
+                                    val gatt = device.connectGatt(this@MainActivity, false, gattCallback)
+                                    gattConnections[address] = gatt
+                                    connectionStates[address] = "Connecting"
+                                }
+                            } else {
+                                Log.w(TAG, "BLUETOOTH_CONNECT permission missing")
+                            }
+                        }
                     )
                 }
             }

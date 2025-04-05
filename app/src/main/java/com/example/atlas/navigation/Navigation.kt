@@ -1,6 +1,9 @@
 package com.example.atlas.navigation
 
+import android.os.Build
+import androidx.annotation.RequiresApi
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -15,12 +18,15 @@ import com.example.atlas.ui.screens.LogInScreen
 import com.example.atlas.ui.screens.RegisterScreen
 import com.example.atlas.ui.screens.TagScreen
 
+@RequiresApi(Build.VERSION_CODES.S)
 @Composable
 fun AppNavHost(
     navController: NavHostController,
     permissionManager: PermissionManager,
     bleScanManager: BleScanManager,
-    foundDevices: MutableList<BleDevice>
+    foundDevices: MutableList<BleDevice>,
+    connectionStates: SnapshotStateMap<String, String>,
+    onConnect: (String) -> Unit
 ) {
     NavHost(navController = navController, startDestination = "logIn") {
         composable("logIn") {
@@ -37,7 +43,9 @@ fun AppNavHost(
                 navController = navController,
                 permissionManager = permissionManager,
                 bleScanManager = bleScanManager,
-                foundDevices = foundDevices
+                foundDevices = foundDevices,
+                connectionStates = connectionStates,
+                onConnect = onConnect
             )
         }
         composable(
@@ -45,7 +53,7 @@ fun AppNavHost(
             arguments = listOf(
                 navArgument("tagId") {
                     type = NavType.StringType
-                    defaultValue = "" // Optional: Provide a default value
+                    defaultValue = ""
                 }
             )
         ) { backStackEntry ->
