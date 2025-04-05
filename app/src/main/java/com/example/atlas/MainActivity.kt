@@ -3,6 +3,7 @@ package com.example.atlas
 import android.Manifest
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCallback
+import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.content.pm.PackageManager
@@ -14,7 +15,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresApi
-import androidx.annotation.RequiresPermission
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
@@ -30,11 +30,19 @@ import com.example.atlas.blescanner.model.BleScanCallback
 import com.example.atlas.navigation.AppNavHost
 import com.example.atlas.permissions.PermissionManager
 import com.example.atlas.ui.components.BottomNavBar
+import com.example.atlas.ui.components.TopNavBar
 import com.example.atlas.ui.theme.AtlasTheme
+import androidx.compose.ui.platform.LocalContext
+import java.util.UUID
 
 class MainActivity : ComponentActivity() {
     private lateinit var permissionManager: PermissionManager
     private lateinit var btManager: BluetoothManager
+
+    private val BATTERY_SERVICE_UUID = UUID.fromString("0000180F-0000-1000-8000-00805F9B34FB")
+    private val BATTERY_LEVEL_UUID = UUID.fromString("00002A19-0000-1000-8000-00805F9B34FB")
+    private val DEVICE_INFO_SERVICE_UUID = UUID.fromString("0000180A-0000-1000-8000-00805F9B34FB")
+    private val FIRMWARE_VERSION_UUID = UUID.fromString("00002A26-0000-1000-8000-00805F9B34FB")
 
     @RequiresApi(Build.VERSION_CODES.S)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -47,11 +55,16 @@ class MainActivity : ComponentActivity() {
             AtlasTheme {
                 val navController = rememberNavController()
                 val foundDevices = remember { mutableStateListOf<BleDevice>() }
+                val connectionStates = remember { mutableStateMapOf<String, String>() }
+                val gattConnections = remember { mutableMapOf<String, BluetoothGatt>() }
+                val deviceData = remember { mutableStateMapOf<String, Map<String, String>>() }
+                val connectionStartTimes = remember { mutableMapOf<String, Long>() }
+                val context = LocalContext.current // Get context
 
                 val bleScanManager = remember {
                     BleScanManager(btManager, 5000, scanCallback = BleScanCallback({
-                        val address = it?.device?.address
-                        if (address.isNullOrBlank()) {
+                        val address = it?.device?.address ?: return@BleScanCallback
+                        if (address.isBlank()) {
                             Log.w(TAG, "ScanResult has no valid address, skipping")
                             return@BleScanCallback
                         }
@@ -98,15 +111,11 @@ class MainActivity : ComponentActivity() {
                     permissionManager.dispatchOnRequestPermissionsResult(1, grantResults)
                 }
 
-                val connectionStates = remember { mutableStateMapOf<String, String>() }
-                val gattConnections = remember { mutableMapOf<String, BluetoothGatt>() }
-
                 val prefs = getSharedPreferences("AtlasPrefs", Context.MODE_PRIVATE)
                 val savedDeviceAddress = remember { mutableStateOf(prefs.getString("connectedDevice", null)) }
 
                 val gattCallback = remember {
                     object : BluetoothGattCallback() {
-                        @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
                         override fun onConnectionStateChange(gatt: BluetoothGatt?, status: Int, newState: Int) {
                             val address = gatt?.device?.address ?: return
                             Log.d(TAG, "Gatt callback for $address: status=$status, newState=$newState")
@@ -116,11 +125,21 @@ class MainActivity : ComponentActivity() {
                                     connectionStates[address] = "Connected"
                                     prefs.edit().putString("connectedDevice", address).apply()
                                     savedDeviceAddress.value = address
+                                    connectionStartTimes[address] = System.currentTimeMillis()
+                                    if (ActivityCompat.checkSelfPermission(
+                                            this@MainActivity,
+                                            Manifest.permission.BLUETOOTH_CONNECT
+                                        ) == PackageManager.PERMISSION_GRANTED
+                                    ) {
+                                        gatt.discoverServices()
+                                    }
                                 }
                                 BluetoothGatt.STATE_DISCONNECTED -> {
                                     Log.d(TAG, "Disconnected from $address")
                                     connectionStates[address] = "Disconnected"
                                     gattConnections.remove(address)?.close()
+                                    deviceData.remove(address)
+                                    connectionStartTimes.remove(address)
                                     if (savedDeviceAddress.value == address) {
                                         prefs.edit().remove("connectedDevice").apply()
                                         savedDeviceAddress.value = null
@@ -136,6 +155,54 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                             Log.d(TAG, "Current connectionStates: $connectionStates")
+                        }
+
+                        override fun onServicesDiscovered(gatt: BluetoothGatt?, status: Int) {
+                            if (status == BluetoothGatt.GATT_SUCCESS) {
+                                val address = gatt?.device?.address ?: return
+                                Log.d(TAG, "Services discovered for $address")
+                                if (ActivityCompat.checkSelfPermission(
+                                        this@MainActivity,
+                                        Manifest.permission.BLUETOOTH_CONNECT
+                                    ) != PackageManager.PERMISSION_GRANTED
+                                ) return
+
+                                val batteryService = gatt.getService(BATTERY_SERVICE_UUID)
+                                batteryService?.getCharacteristic(BATTERY_LEVEL_UUID)?.let { char ->
+                                    gatt.readCharacteristic(char)
+                                }
+
+                                val deviceInfoService = gatt.getService(DEVICE_INFO_SERVICE_UUID)
+                                deviceInfoService?.getCharacteristic(FIRMWARE_VERSION_UUID)?.let { char ->
+                                    gatt.readCharacteristic(char)
+                                }
+                            }
+                        }
+
+                        override fun onCharacteristicRead(
+                            gatt: BluetoothGatt?,
+                            characteristic: BluetoothGattCharacteristic?,
+                            status: Int
+                        ) {
+                            if (status == BluetoothGatt.GATT_SUCCESS) {
+                                val address = gatt?.device?.address ?: return
+                                val uuid = characteristic?.uuid ?: return
+                                val value = characteristic.value?.let { bytes ->
+                                    if (uuid == BATTERY_LEVEL_UUID) {
+                                        bytes[0].toInt().toString() + "%"
+                                    } else {
+                                        String(bytes)
+                                    }
+                                } ?: "Unknown"
+
+                                val currentData = deviceData[address] ?: emptyMap()
+                                deviceData[address] = currentData + when (uuid) {
+                                    BATTERY_LEVEL_UUID -> "Battery" to value
+                                    FIRMWARE_VERSION_UUID -> "Firmware" to value
+                                    else -> uuid.toString() to value
+                                }
+                                Log.d(TAG, "Read $uuid for $address: $value")
+                            }
                         }
                     }
                 }
@@ -155,11 +222,15 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                // Get the current route
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentRoute = navBackStackEntry?.destination?.route
 
                 Scaffold(
+                    topBar = {
+                        if (currentRoute != "logIn" && currentRoute != "register") {
+                            TopNavBar(navController = navController)
+                        }
+                    },
                     bottomBar = {
                         if (currentRoute != "logIn" && currentRoute != "register") {
                             BottomNavBar(navController = navController)
@@ -178,6 +249,10 @@ class MainActivity : ComponentActivity() {
                             foundDevices = foundDevices,
                             connectionStates = connectionStates,
                             savedDeviceAddress = savedDeviceAddress,
+                            deviceData = deviceData,
+                            connectionStartTimes = connectionStartTimes,
+                            gattConnections = gattConnections,
+                            context = context, // Pass context
                             onConnect = { address ->
                                 if (ActivityCompat.checkSelfPermission(
                                         this@MainActivity,
@@ -199,8 +274,6 @@ class MainActivity : ComponentActivity() {
                                     } else {
                                         Log.w(TAG, "Device null or already connected: $address")
                                     }
-                                } else {
-                                    Log.w(TAG, "BLUETOOTH_CONNECT permission missing")
                                 }
                             },
                             onDisconnect = { address ->
@@ -219,8 +292,6 @@ class MainActivity : ComponentActivity() {
                                         Log.w(TAG, "No GATT found for $address, forcing state to Disconnected")
                                         connectionStates[address] = "Disconnected"
                                     }
-                                } else {
-                                    Log.w(TAG, "BLUETOOTH_CONNECT permission missing for disconnect")
                                 }
                             }
                         )

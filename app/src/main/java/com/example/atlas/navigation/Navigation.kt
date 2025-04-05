@@ -1,5 +1,9 @@
 package com.example.atlas.navigation
 
+import android.bluetooth.BluetoothGatt
+import android.content.Context
+import android.os.Build
+import androidx.annotation.RequiresApi
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.snapshots.SnapshotStateMap
@@ -14,9 +18,11 @@ import com.example.atlas.permissions.PermissionManager
 import com.example.atlas.ui.screens.CardConnectionScreen
 import com.example.atlas.ui.screens.HomeScreen
 import com.example.atlas.ui.screens.LogInScreen
+import com.example.atlas.ui.screens.ProfileScreen
 import com.example.atlas.ui.screens.RegisterScreen
 import com.example.atlas.ui.screens.TagScreen
 
+@RequiresApi(Build.VERSION_CODES.S)
 @Composable
 fun AppNavHost(
     navController: NavHostController,
@@ -25,6 +31,10 @@ fun AppNavHost(
     foundDevices: MutableList<BleDevice>,
     connectionStates: SnapshotStateMap<String, String>,
     savedDeviceAddress: MutableState<String?>,
+    deviceData: SnapshotStateMap<String, Map<String, String>>,
+    connectionStartTimes: MutableMap<String, Long>,
+    gattConnections: MutableMap<String, BluetoothGatt>,
+    context: Context, // Add context
     onConnect: (String) -> Unit,
     onDisconnect: (String) -> Unit
 ) {
@@ -36,7 +46,15 @@ fun AppNavHost(
             RegisterScreen(navController = navController)
         }
         composable("home") {
-            HomeScreen(navController = navController)
+            HomeScreen(
+                navController = navController,
+                connectionStates = connectionStates,
+                foundDevices = foundDevices,
+                deviceData = deviceData,
+                connectionStartTimes = connectionStartTimes,
+                gattConnections = gattConnections,
+                context = context // Pass to HomeScreen
+            )
         }
         composable("connection") {
             CardConnectionScreen(
@@ -49,6 +67,9 @@ fun AppNavHost(
                 onConnect = onConnect,
                 onDisconnect = onDisconnect
             )
+        }
+        composable("profile") {
+            ProfileScreen(navController = navController)
         }
         composable(
             route = "tag/{tagId}",
