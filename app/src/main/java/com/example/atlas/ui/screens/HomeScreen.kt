@@ -32,7 +32,9 @@ fun HomeScreen(
     deviceData: SnapshotStateMap<String, Map<String, String>>,
     connectionStartTimes: MutableMap<String, Long>,
     gattConnections: MutableMap<String, BluetoothGatt>,
-    context: Context // Add context
+    context: Context,
+    lastReadRequestTimes: MutableMap<String, Long>,
+    updateRate: MutableState<Long> // Add updateRate
 ) {
     var selectedDeviceAddress by remember { mutableStateOf<String?>(null) }
 
@@ -41,8 +43,7 @@ fun HomeScreen(
     val DEVICE_INFO_SERVICE_UUID = UUID.fromString("0000180A-0000-1000-8000-00805F9B34FB")
     val FIRMWARE_VERSION_UUID = UUID.fromString("00002A26-0000-1000-8000-00805F9B34FB")
 
-    // Refresh data every 500ms with permission check
-    LaunchedEffect(Unit) {
+    LaunchedEffect(updateRate.value) { // Re-run when updateRate changes
         while (true) {
             if (ActivityCompat.checkSelfPermission(
                     context,
@@ -50,8 +51,10 @@ fun HomeScreen(
                 ) == PackageManager.PERMISSION_GRANTED
             ) {
                 val connectedDevices = connectionStates.filter { it.value == "Connected" }.keys
+                val currentTime = System.currentTimeMillis()
                 for (address in connectedDevices) {
                     gattConnections[address]?.let { gatt ->
+                        lastReadRequestTimes[address] = currentTime
                         val batteryService = gatt.getService(BATTERY_SERVICE_UUID)
                         batteryService?.getCharacteristic(BATTERY_LEVEL_UUID)?.let { char ->
                             gatt.readCharacteristic(char)
@@ -60,13 +63,13 @@ fun HomeScreen(
                         deviceInfoService?.getCharacteristic(FIRMWARE_VERSION_UUID)?.let { char ->
                             gatt.readCharacteristic(char)
                         }
+                        gatt.readRemoteRssi()
                     }
                 }
             } else {
-                // Optionally log or show a message if permission is denied
                 println("BLUETOOTH_CONNECT permission denied, skipping GATT reads")
             }
-            delay(500L)
+            delay(updateRate.value) // Use dynamic update rate
         }
     }
 
@@ -134,11 +137,8 @@ fun HomeScreen(
             val device = foundDevices.find { it.address == address }
             val name = device?.name ?: "Unknown Device"
             val data = deviceData[address] ?: emptyMap()
-            val rssi = device?.rssi?.toString() ?: "N/A"
-            val latency = connectionStartTimes[address]?.let { startTime ->
-                val connectedTime = System.currentTimeMillis() - startTime
-                "$connectedTime ms"
-            } ?: "N/A"
+            val rssi = data["RSSI"] ?: "N/A"
+            val latency = data["Latency"] ?: "N/A"
 
             Text(
                 text = "Details for $name",
@@ -151,8 +151,7 @@ fun HomeScreen(
                     .fillMaxWidth()
                     .heightIn(max = 200.dp)
             ) {
-                val details = data.entries.map { "${it.key}: ${it.value}" } +
-                        listOf("RSSI: $rssi dBm", "Latency: $latency")
+                val details = data.entries.map { "${it.key}: ${it.value}" }
                 items(details) { detail ->
                     Text(
                         text = detail,

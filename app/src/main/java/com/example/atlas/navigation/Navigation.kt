@@ -20,6 +20,7 @@ import com.example.atlas.ui.screens.HomeScreen
 import com.example.atlas.ui.screens.LogInScreen
 import com.example.atlas.ui.screens.ProfileScreen
 import com.example.atlas.ui.screens.RegisterScreen
+import com.example.atlas.ui.screens.SettingsScreen
 import com.example.atlas.ui.screens.TagScreen
 
 @RequiresApi(Build.VERSION_CODES.S)
@@ -34,7 +35,9 @@ fun AppNavHost(
     deviceData: SnapshotStateMap<String, Map<String, String>>,
     connectionStartTimes: MutableMap<String, Long>,
     gattConnections: MutableMap<String, BluetoothGatt>,
-    context: Context, // Add context
+    context: Context,
+    lastReadRequestTimes: MutableMap<String, Long>,
+    updateRate: MutableState<Long>, // Add updateRate parameter
     onConnect: (String) -> Unit,
     onDisconnect: (String) -> Unit
 ) {
@@ -53,7 +56,9 @@ fun AppNavHost(
                 deviceData = deviceData,
                 connectionStartTimes = connectionStartTimes,
                 gattConnections = gattConnections,
-                context = context // Pass to HomeScreen
+                context = context,
+                lastReadRequestTimes = lastReadRequestTimes,
+                updateRate = updateRate // Pass updateRate
             )
         }
         composable("connection") {
@@ -70,6 +75,12 @@ fun AppNavHost(
         }
         composable("profile") {
             ProfileScreen(navController = navController)
+        }
+        composable("settings") {
+            SettingsScreen(
+                navController = navController,
+                updateRate = updateRate
+            )
         }
         composable(
             route = "tag/{tagId}",

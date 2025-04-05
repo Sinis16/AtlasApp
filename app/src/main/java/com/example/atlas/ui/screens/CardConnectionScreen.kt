@@ -204,10 +204,23 @@ fun DeviceItem(
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Column {
-            Text(text = "Address: ${device.address}", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            Text(text = "Name: ${device.name ?: "Unknown"}", fontSize = 14.sp)
-            Text(text = "RSSI: ${device.rssi ?: "N/A"} dBm", fontSize = 14.sp)
-            Text(text = "Status: $connectionState" + if (isSavedDevice) " (Saved)" else "", fontSize = 14.sp)
+            Text(
+                text = device.name ?: "Unknown", // Name in bold
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = "Address: ${device.address}", // Address below, not bold
+                fontSize = 14.sp
+            )
+            Text(
+                text = "RSSI: ${device.rssi ?: "N/A"} dBm",
+                fontSize = 14.sp
+            )
+            Text(
+                text = "Status: $connectionState" + if (isSavedDevice) " (Saved)" else "",
+                fontSize = 14.sp
+            )
         }
         Button(
             onClick = { onConnect(device.address) },

@@ -59,7 +59,9 @@ class MainActivity : ComponentActivity() {
                 val gattConnections = remember { mutableMapOf<String, BluetoothGatt>() }
                 val deviceData = remember { mutableStateMapOf<String, Map<String, String>>() }
                 val connectionStartTimes = remember { mutableMapOf<String, Long>() }
-                val context = LocalContext.current // Get context
+                val lastReadRequestTimes = remember { mutableMapOf<String, Long>() }
+                val updateRate = remember { mutableStateOf(500L) } // Default to Normal (500ms)
+                val context = LocalContext.current
 
                 val bleScanManager = remember {
                     BleScanManager(btManager, 5000, scanCallback = BleScanCallback({
@@ -140,6 +142,7 @@ class MainActivity : ComponentActivity() {
                                     gattConnections.remove(address)?.close()
                                     deviceData.remove(address)
                                     connectionStartTimes.remove(address)
+                                    lastReadRequestTimes.remove(address)
                                     if (savedDeviceAddress.value == address) {
                                         prefs.edit().remove("connectedDevice").apply()
                                         savedDeviceAddress.value = null
@@ -194,14 +197,29 @@ class MainActivity : ComponentActivity() {
                                         String(bytes)
                                     }
                                 } ?: "Unknown"
+                                val currentTime = System.currentTimeMillis()
+                                val requestTime = lastReadRequestTimes[address] ?: currentTime
+                                val latency = (currentTime - requestTime).toString() + " ms"
 
                                 val currentData = deviceData[address] ?: emptyMap()
                                 deviceData[address] = currentData + when (uuid) {
                                     BATTERY_LEVEL_UUID -> "Battery" to value
                                     FIRMWARE_VERSION_UUID -> "Firmware" to value
                                     else -> uuid.toString() to value
-                                }
-                                Log.d(TAG, "Read $uuid for $address: $value")
+                                } + ("Latency" to latency)
+                                Log.d(TAG, "Read $uuid for $address: $value, Latency: $latency")
+                            }
+                        }
+
+                        override fun onReadRemoteRssi(gatt: BluetoothGatt?, rssi: Int, status: Int) {
+                            if (status == BluetoothGatt.GATT_SUCCESS) {
+                                val address = gatt?.device?.address ?: return
+                                val currentTime = System.currentTimeMillis()
+                                val requestTime = lastReadRequestTimes[address] ?: currentTime
+                                val latency = (currentTime - requestTime).toString() + " ms"
+                                val currentData = deviceData[address] ?: emptyMap()
+                                deviceData[address] = currentData + ("RSSI" to "$rssi dBm") + ("Latency" to latency)
+                                Log.d(TAG, "RSSI for $address: $rssi dBm, Latency: $latency")
                             }
                         }
                     }
@@ -252,7 +270,9 @@ class MainActivity : ComponentActivity() {
                             deviceData = deviceData,
                             connectionStartTimes = connectionStartTimes,
                             gattConnections = gattConnections,
-                            context = context, // Pass context
+                            context = context,
+                            lastReadRequestTimes = lastReadRequestTimes,
+                            updateRate = updateRate, // Pass updateRate
                             onConnect = { address ->
                                 if (ActivityCompat.checkSelfPermission(
                                         this@MainActivity,

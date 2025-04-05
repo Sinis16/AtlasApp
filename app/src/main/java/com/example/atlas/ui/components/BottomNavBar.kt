@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -22,13 +23,23 @@ fun BottomNavBar(navController: NavHostController) {
         contentColor = MaterialTheme.colorScheme.onSurface,
         modifier = Modifier.fillMaxWidth()
     ) {
-        // Left spacer (for future left icon)
+        // Left: Settings
         NavigationBarItem(
-            icon = { /* Empty for now */ },
-            selected = false,
-            onClick = { /* Placeholder */ },
-            enabled = false,
-            modifier = Modifier.weight(1f)
+            icon = { Icon(Icons.Filled.Settings, contentDescription = "Settings") },
+            label = { Text("Settings") }, // Remove this for icon-only
+            selected = navController.currentDestination?.route == "settings",
+            onClick = {
+                navController.navigate("settings") {
+                    popUpTo(navController.graph.startDestinationId) {
+                        saveState = true
+                    }
+                    launchSingleTop = true
+                    restoreState = true
+                }
+            },
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 8.dp)
         )
 
         // Center: Home
@@ -50,7 +61,7 @@ fun BottomNavBar(navController: NavHostController) {
                 .padding(horizontal = 8.dp)
         )
 
-        // Right: Connect (SettingsInputComponent)
+        // Right: Connect
         NavigationBarItem(
             icon = { Icon(Icons.Filled.Menu, contentDescription = "Connect") },
             label = { Text("Connect") }, // Remove this for icon-only
