@@ -6,6 +6,9 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.example.atlas.blescanner.BleScanManager
+import com.example.atlas.blescanner.model.BleDevice
+import com.example.atlas.permissions.PermissionManager
 import com.example.atlas.ui.screens.CardConnectionScreen
 import com.example.atlas.ui.screens.HomeScreen
 import com.example.atlas.ui.screens.LogInScreen
@@ -13,7 +16,12 @@ import com.example.atlas.ui.screens.RegisterScreen
 import com.example.atlas.ui.screens.TagScreen
 
 @Composable
-fun AppNavHost(navController: NavHostController) {
+fun AppNavHost(
+    navController: NavHostController,
+    permissionManager: PermissionManager,
+    bleScanManager: BleScanManager,
+    foundDevices: MutableList<BleDevice>
+) {
     NavHost(navController = navController, startDestination = "logIn") {
         composable("logIn") {
             LogInScreen(navController = navController)
@@ -25,7 +33,12 @@ fun AppNavHost(navController: NavHostController) {
             HomeScreen(navController = navController)
         }
         composable("connection") {
-            CardConnectionScreen(navController = navController)
+            CardConnectionScreen(
+                navController = navController,
+                permissionManager = permissionManager,
+                bleScanManager = bleScanManager,
+                foundDevices = foundDevices
+            )
         }
         composable(
             route = "tag/{tagId}",
