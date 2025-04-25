@@ -14,6 +14,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.example.atlas.blescanner.BleScanManager
 import com.example.atlas.blescanner.model.BleDevice
+import com.example.atlas.models.TagData
 import com.example.atlas.permissions.PermissionManager
 import com.example.atlas.ui.screens.CardConnectionScreen
 import com.example.atlas.ui.screens.HomeScreen
@@ -37,7 +38,8 @@ fun AppNavHost(
     gattConnections: MutableMap<String, BluetoothGatt>,
     context: Context,
     lastReadRequestTimes: MutableMap<String, Long>,
-    updateRate: MutableState<Long>, // Add updateRate parameter
+    updateRate: MutableState<Long>,
+    tagDataMap: SnapshotStateMap<String, TagData>, // Add tagDataMap
     onConnect: (String) -> Unit,
     onDisconnect: (String) -> Unit
 ) {
@@ -58,7 +60,8 @@ fun AppNavHost(
                 gattConnections = gattConnections,
                 context = context,
                 lastReadRequestTimes = lastReadRequestTimes,
-                updateRate = updateRate // Pass updateRate
+                updateRate = updateRate,
+                tagDataMap = tagDataMap // Pass tagDataMap
             )
         }
         composable("connection") {

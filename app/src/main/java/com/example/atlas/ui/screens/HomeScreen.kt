@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
 import androidx.navigation.NavHostController
 import com.example.atlas.blescanner.model.BleDevice
+import com.example.atlas.models.TagData
 import kotlinx.coroutines.delay
 import java.util.UUID
 
@@ -34,7 +35,8 @@ fun HomeScreen(
     gattConnections: MutableMap<String, BluetoothGatt>,
     context: Context,
     lastReadRequestTimes: MutableMap<String, Long>,
-    updateRate: MutableState<Long> // Add updateRate
+    updateRate: MutableState<Long>,
+    tagDataMap: SnapshotStateMap<String, TagData> // Add tagDataMap
 ) {
     var selectedDeviceAddress by remember { mutableStateOf<String?>(null) }
 
@@ -43,7 +45,7 @@ fun HomeScreen(
     val DEVICE_INFO_SERVICE_UUID = UUID.fromString("0000180A-0000-1000-8000-00805F9B34FB")
     val FIRMWARE_VERSION_UUID = UUID.fromString("00002A26-0000-1000-8000-00805F9B34FB")
 
-    LaunchedEffect(updateRate.value) { // Re-run when updateRate changes
+    LaunchedEffect(updateRate.value) {
         while (true) {
             if (ActivityCompat.checkSelfPermission(
                     context,
@@ -69,7 +71,7 @@ fun HomeScreen(
             } else {
                 println("BLUETOOTH_CONNECT permission denied, skipping GATT reads")
             }
-            delay(updateRate.value) // Use dynamic update rate
+            delay(updateRate.value)
         }
     }
 
@@ -137,8 +139,7 @@ fun HomeScreen(
             val device = foundDevices.find { it.address == address }
             val name = device?.name ?: "Unknown Device"
             val data = deviceData[address] ?: emptyMap()
-            val rssi = data["RSSI"] ?: "N/A"
-            val latency = data["Latency"] ?: "N/A"
+            val tagData = tagDataMap[address] // Get TagData for device
 
             Text(
                 text = "Details for $name",
@@ -151,7 +152,13 @@ fun HomeScreen(
                     .fillMaxWidth()
                     .heightIn(max = 200.dp)
             ) {
-                val details = data.entries.map { "${it.key}: ${it.value}" }
+                val details = data.entries.map { "${it.key}: ${it.value}" }.toMutableList()
+                tagData?.let {
+                    details.add("Tag ID: ${it.id}")
+                    details.add("Distance: ${String.format("%.2f", it.distance)} cm")
+                    details.add("Angle: ${String.format("%.1f", it.angle)} deg")
+                    details.add("Battery: ${it.battery}%")
+                }
                 items(details) { detail ->
                     Text(
                         text = detail,
