@@ -37,6 +37,7 @@ import com.example.atlas.ui.components.BottomNavBar
 import com.example.atlas.ui.components.TopNavBar
 import com.example.atlas.ui.theme.AtlasTheme
 import androidx.compose.ui.platform.LocalContext
+import java.nio.ByteBuffer
 import java.util.UUID
 
 class MainActivity : ComponentActivity() {
@@ -187,7 +188,6 @@ class MainActivity : ComponentActivity() {
                                     return
                                 }
 
-                                // Log all services and characteristics
                                 gatt.services?.forEach { service ->
                                     Log.d(TAG, "Service UUID: ${service.uuid}")
                                     service.characteristics.forEach { char ->
@@ -195,7 +195,6 @@ class MainActivity : ComponentActivity() {
                                     }
                                 }
 
-                                // Battery service
                                 val batteryService = gatt.getService(BATTERY_SERVICE_UUID)
                                 if (batteryService != null) {
                                     batteryService.getCharacteristic(BATTERY_LEVEL_UUID)?.let { char ->
@@ -206,7 +205,6 @@ class MainActivity : ComponentActivity() {
                                     Log.w(TAG, "Battery service not found for $address")
                                 }
 
-                                // Device info service
                                 val deviceInfoService = gatt.getService(DEVICE_INFO_SERVICE_UUID)
                                 if (deviceInfoService != null) {
                                     deviceInfoService.getCharacteristic(FIRMWARE_VERSION_UUID)?.let { char ->
@@ -217,7 +215,6 @@ class MainActivity : ComponentActivity() {
                                     Log.w(TAG, "Device info service not found for $address")
                                 }
 
-                                // Custom distance service
                                 val distanceService = gatt.getService(DISTANCE_SERVICE_UUID)
                                 if (distanceService != null) {
                                     Log.d(TAG, "Distance service found for $address")
@@ -240,7 +237,6 @@ class MainActivity : ComponentActivity() {
                                     } ?: Log.e(TAG, "Distance characteristic not found for $address")
                                 } else {
                                     Log.e(TAG, "Distance service not found for $address")
-                                    // Try refreshing GATT cache
                                     try {
                                         val refreshMethod = gatt.javaClass.getMethod("refresh")
                                         if (refreshMethod.invoke(gatt) as Boolean) {
@@ -319,7 +315,6 @@ class MainActivity : ComponentActivity() {
                                 } + ("Latency" to latency)
                                 Log.d(TAG, "Read $uuid for $address: $value, Latency: $latency")
 
-                                // Update TagData with battery
                                 val batteryValue = value.removeSuffix("%").toIntOrNull() ?: 0
                                 val currentTagData = tagDataMap[address] ?: TagData(address, 0.0, 0.0, batteryValue)
                                 tagDataMap[address] = currentTagData.copy(battery = batteryValue)
@@ -333,11 +328,42 @@ class MainActivity : ComponentActivity() {
                             val address = gatt?.device?.address ?: return
                             val uuid = characteristic?.uuid ?: return
                             if (uuid == DISTANCE_CHAR_UUID) {
-                                val distanceMeters = characteristic.getFloatValue(BluetoothGattCharacteristic.FORMAT_FLOAT, 0)
-                                val distanceCm = distanceMeters * 100.0
-                                val currentTagData = tagDataMap[address] ?: TagData(address, 0.0, 0.0, 0)
-                                tagDataMap[address] = currentTagData.copy(distance = distanceCm)
-                                Log.d(TAG, "Distance notification for $address: $distanceCm cm")
+                                val bytes = characteristic.value ?: byteArrayOf()
+                                Log.d(TAG, "Distance notification raw bytes for $address: ${bytes.joinToString(" ") { "%02x".format(it) }}")
+                                if (bytes.size >= 4) {
+                                    try {
+                                        // Try little-endian first
+                                        var distanceMeters = ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.LITTLE_ENDIAN).float
+                                        if (distanceMeters.isFinite()) {
+                                            val distanceCm = distanceMeters * 100.0
+                                            val currentTagData = tagDataMap[address] ?: TagData(address, 0.0, 0.0, 0)
+                                            tagDataMap[address] = currentTagData.copy(distance = distanceCm)
+                                            Log.d(TAG, "Distance notification for $address: $distanceCm cm (little-endian)")
+                                        } else {
+                                            Log.w(TAG, "Little-endian parse invalid for $address: $distanceMeters")
+                                            // Try big-endian
+                                            distanceMeters = ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.BIG_ENDIAN).float
+                                            if (distanceMeters.isFinite()) {
+                                                val distanceCm = distanceMeters * 100.0
+                                                val currentTagData = tagDataMap[address] ?: TagData(address, 0.0, 0.0, 0)
+                                                tagDataMap[address] = currentTagData.copy(distance = distanceCm)
+                                                Log.d(TAG, "Distance notification for $address: $distanceCm cm (big-endian)")
+                                            } else {
+                                                Log.w(TAG, "Big-endian parse invalid for $address: $distanceMeters")
+                                                val currentTagData = tagDataMap[address] ?: TagData(address, 0.0, 0.0, 0)
+                                                tagDataMap[address] = currentTagData.copy(distance = 0.0)
+                                            }
+                                        }
+                                    } catch (e: Exception) {
+                                        Log.e(TAG, "Failed to parse float for $address: ${e.message}")
+                                        val currentTagData = tagDataMap[address] ?: TagData(address, 0.0, 0.0, 0)
+                                        tagDataMap[address] = currentTagData.copy(distance = 0.0)
+                                    }
+                                } else {
+                                    Log.e(TAG, "Insufficient bytes for float: ${bytes.size}")
+                                    val currentTagData = tagDataMap[address] ?: TagData(address, 0.0, 0.0, 0)
+                                    tagDataMap[address] = currentTagData.copy(distance = 0.0)
+                                }
                             }
                         }
 
