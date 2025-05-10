@@ -43,7 +43,6 @@ import java.util.UUID
 class MainActivity : ComponentActivity() {
     private lateinit var permissionManager: PermissionManager
     private lateinit var btManager: BluetoothManager
-
     private val BATTERY_SERVICE_UUID = UUID.fromString("0000180F-0000-1000-8000-00805F9B34FB")
     private val BATTERY_LEVEL_UUID = UUID.fromString("00002A19-0000-1000-8000-00805F9B34FB")
     private val DEVICE_INFO_SERVICE_UUID = UUID.fromString("0000180A-0000-1000-8000-00805F9B34FB")
@@ -252,7 +251,7 @@ class MainActivity : ComponentActivity() {
                             } else {
                                 Log.e(TAG, "Service discovery failed for $address, status=$status")
                             }
-                        }
+                        } //khjgkjhg
 
                         override fun onDescriptorWrite(gatt: BluetoothGatt?, descriptor: BluetoothGattDescriptor?, status: Int) {
                             val address = gatt?.device?.address ?: return
