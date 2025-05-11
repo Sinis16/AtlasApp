@@ -168,12 +168,13 @@ fun RegisterScreen(
                         userViewModel.signUpWithEmail(email, password) { success, errorMsg ->
                             isLoading = false
                             if (success) {
+                                userViewModel.updateClientsUser(name) // Save name
                                 Toast.makeText(
                                     context,
-                                    "Registration successful",
+                                    "Registration successful. Please verify your email and log in.",
                                     Toast.LENGTH_LONG
                                 ).show()
-                                navController.navigate("home") {
+                                navController.navigate("logIn") {
                                     popUpTo("register") { inclusive = true }
                                     launchSingleTop = true
                                 }
@@ -199,6 +200,17 @@ fun RegisterScreen(
         }
 
         Spacer(modifier = Modifier.height(16.dp))
+
+        // Verification Note
+        Text(
+            text = "You must verify your account via the email sent to your phone before logging in.",
+            fontSize = 14.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 16.dp),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
 
         // Log In Link
         Text(
