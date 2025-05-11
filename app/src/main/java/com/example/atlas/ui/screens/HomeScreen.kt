@@ -16,6 +16,8 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp // Added import for lerp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -44,7 +46,7 @@ fun HomeScreen(
     tagDataMap: SnapshotStateMap<String, TagData>,
     leaveBehindDistance: MutableState<Long>,
     isLeaveBehindEnabled: MutableState<Boolean>,
-    isAdvancedMode: MutableState<Boolean> // New parameter for advanced mode
+    isAdvancedMode: MutableState<Boolean>
 ) {
     var selectedDeviceAddress by remember { mutableStateOf<String?>(null) }
     var notificationDeviceAddress by remember { mutableStateOf<String?>(null) }
@@ -147,7 +149,19 @@ fun HomeScreen(
                     if (name == null) {
                         name = "Unknown Device"
                     }
-                    val battery = deviceData[address]?.get("Battery") ?: "N/A"
+                    val distance = deviceData[address]?.get("Distance")
+                    val displayDistance = when {
+                        distance == null || tagDataMap[address]?.distance == 0.0 -> "loading..."
+                        else -> distance
+                    }
+
+                    // Parse distance for color interpolation (in cm)
+                    val distanceValue = tagDataMap[address]?.distance ?: 0.0
+                    // Interpolate between greyish red (0 cm) and greyish blue (1000 cm)
+                    val fraction = (distanceValue / 700.0).coerceIn(0.0, 1.0).toFloat()
+                    val greyishRed = Color(0xFF7A1515) // Muted red at 0 cm
+                    val greyishBlue = Color(0xFF2C2C62) // Muted blue at 1000 cm
+                    val interpolatedColor = lerp(greyishRed, greyishBlue, fraction)
 
                     Box(
                         modifier = Modifier
@@ -157,7 +171,7 @@ fun HomeScreen(
                                 color = if (selectedDeviceAddress == address) {
                                     MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
                                 } else {
-                                    MaterialTheme.colorScheme.surfaceVariant
+                                    interpolatedColor
                                 },
                                 shape = RoundedCornerShape(8.dp)
                             )
@@ -172,7 +186,7 @@ fun HomeScreen(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text(text = name, fontSize = 16.sp)
-                            Text(text = "Battery: $battery", fontSize = 16.sp)
+                            Text(text = displayDistance, fontSize = 16.sp)
                         }
                     }
                 }
