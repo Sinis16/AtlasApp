@@ -11,21 +11,22 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.core.app.ActivityCompat
 import androidx.navigation.NavHostController
 import com.example.atlas.blescanner.model.BleDevice
 import com.example.atlas.models.TagData
 import kotlinx.coroutines.delay
 import java.util.UUID
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 
 private const val TAG = "HomeScreen"
 
@@ -43,10 +44,48 @@ fun HomeScreen(
     tagDataMap: SnapshotStateMap<String, TagData>
 ) {
     var selectedDeviceAddress by remember { mutableStateOf<String?>(null) }
+    var notificationDeviceAddress by remember { mutableStateOf<String?>(null) }
+    val notificationState = remember { mutableStateMapOf<String, NotificationStatus>() }
 
     val BATTERY_SERVICE_UUID = UUID.fromString("0000180F-0000-1000-8000-00805F9B34FB")
     val BATTERY_LEVEL_UUID = UUID.fromString("00002A19-0000-1000-8000-00805F9B34FB")
 
+    // Monitor distances and manage notifications
+    LaunchedEffect(tagDataMap, connectionStates) {
+        while (true) {
+            val connectedDevices = connectionStates.filter { it.value == "Connected" }.keys
+            for (address in connectedDevices) {
+                val distance = tagDataMap[address]?.distance ?: 0.0
+                val currentStatus = notificationState[address] ?: NotificationStatus.None
+
+                when {
+                    distance > 400.0 && currentStatus == NotificationStatus.None -> {
+                        notificationDeviceAddress = address
+                        notificationState[address] = NotificationStatus.Shown
+                        Log.d(TAG, "Showing notification for $address: distance=$distance cm")
+                    }
+                    distance <= 400.0 && (currentStatus == NotificationStatus.Ignored || currentStatus == NotificationStatus.Shown) -> {
+                        notificationState[address] = NotificationStatus.None
+                        if (notificationDeviceAddress == address) {
+                            notificationDeviceAddress = null
+                        }
+                        Log.d(TAG, "Reset notification state for $address: distance=$distance cm")
+                    }
+                    distance > 400.0 && currentStatus is NotificationStatus.PendingRetrigger -> {
+                        val pendingTime = currentStatus.timestamp
+                        if (System.currentTimeMillis() - pendingTime >= 10_000) {
+                            notificationDeviceAddress = address
+                            notificationState[address] = NotificationStatus.Shown
+                            Log.d(TAG, "Re-triggering notification for $address: distance=$distance cm")
+                        }
+                    }
+                }
+            }
+            delay(1000)
+        }
+    }
+
+    // GATT reads for battery and RSSI
     LaunchedEffect(updateRate.value) {
         while (true) {
             if (ActivityCompat.checkSelfPermission(
@@ -101,7 +140,7 @@ fun HomeScreen(
                 items(connectedDevices.toList()) { address ->
                     val device = foundDevices.find { it.address == address }
                     var name = device?.name ?: "Unknown Device"
-                    if(name == null){
+                    if (name == null) {
                         name = "Unknown Device"
                     }
                     val battery = deviceData[address]?.get("Battery") ?: "N/A"
@@ -139,7 +178,7 @@ fun HomeScreen(
         selectedDeviceAddress?.let { address ->
             val device = foundDevices.find { it.address == address }
             var name = device?.name ?: "Unknown Device"
-            if(name == null){
+            if (name == null) {
                 name = "Unknown Device"
             }
             val data = deviceData[address] ?: emptyMap()
@@ -153,17 +192,14 @@ fun HomeScreen(
 
             var tagId: String? = null
             val details = mutableListOf<String>()
-            // Add deviceData entries (e.g., Distance, Battery, RSSI, Latency)
             data.entries.forEach { (key, value) ->
                 details.add("$key: $value")
             }
-            // Add tagData fields with logging
             tagData?.let {
                 Log.d(TAG, "Details for $address: id=${it.id}, distance=${it.distance}, battery=${it.battery}")
                 details.add("Tag ID: ${it.id}")
                 tagId = it.id
             } ?: run {
-                // Fallback if tagData is null
                 Log.w(TAG, "No tagData for $address")
                 details.add("Tag ID: $address")
                 tagId = address
@@ -211,4 +247,99 @@ fun HomeScreen(
             }
         }
     }
+
+    // Notification Dialog
+    notificationDeviceAddress?.let { address ->
+        val device = foundDevices.find { it.address == address }
+        var name = device?.name ?: "Unknown Device"
+        if (name == null) {
+            name = "Unknown Device"
+        }
+        val tagData = tagDataMap[address]
+        val tagId = tagData?.id ?: address
+
+        Dialog(
+            onDismissRequest = {
+                notificationDeviceAddress = null
+                notificationState[address] = NotificationStatus.PendingRetrigger(System.currentTimeMillis())
+                Log.d(TAG, "Notification closed for $address, pending re-trigger after 10s")
+            }
+        ) {
+            Surface(
+                modifier = Modifier
+                    .padding(16.dp)
+                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp)),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .padding(16.dp)
+                        .fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Objeto fuera de rango",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        IconButton(
+                            onClick = {
+                                notificationDeviceAddress = null
+                                notificationState[address] = NotificationStatus.PendingRetrigger(System.currentTimeMillis())
+                                Log.d(TAG, "X button clicked for $address, pending re-trigger after 10s")
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Close",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Estás dejando atrás el objeto $name",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(
+                            onClick = {
+                                notificationDeviceAddress = null
+                                notificationState[address] = NotificationStatus.Ignored
+                                Log.d(TAG, "Ignorar clicked for $address, suppressing notification")
+                            }
+                        ) {
+                            Text("Ignorar")
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        TextButton(
+                            onClick = {
+                                navController.navigate("tag/$tagId")
+                                notificationDeviceAddress = null
+                                notificationState[address] = NotificationStatus.None
+                                Log.d(TAG, "Buscar clicked for $address, navigating to TagScreen")
+                            }
+                        ) {
+                            Text("Buscar")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Sealed class to track notification status per device
+private sealed class NotificationStatus {
+    object None : NotificationStatus()
+    object Shown : NotificationStatus()
+    object Ignored : NotificationStatus()
+    data class PendingRetrigger(val timestamp: Long) : NotificationStatus()
 }
