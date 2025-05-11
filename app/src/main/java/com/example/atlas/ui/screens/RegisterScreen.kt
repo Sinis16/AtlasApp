@@ -165,10 +165,9 @@ fun RegisterScreen(
                     }
                     else -> {
                         isLoading = true
-                        userViewModel.signUpWithEmail(email, password) { success, errorMsg ->
+                        userViewModel.signUpWithEmail(name, email, password) { success, errorMsg ->
                             isLoading = false
                             if (success) {
-                                userViewModel.updateClientsUser(name) // Save name
                                 Toast.makeText(
                                     context,
                                     "Registration successful. Please verify your email and log in.",

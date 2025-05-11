@@ -71,18 +71,29 @@ class UserRepository @Inject constructor(
         }
     }
 
-    suspend fun signUpWithEmail(emails: String, passwords: String) {
+    suspend fun signUpWithEmail(emails: String, passwords: String, name: String) {
         withContext(Dispatchers.IO) {
             try {
                 supabaseClient.auth.signUpWith(Email) {
                     email = emails
                     password = passwords
+                    data = buildJsonObject {
+                        put("name", name)
+                    }
                 }
                 Log.d("UserRepository", "Sign-up successful for email: $emails")
             } catch (e: Exception) {
                 Log.e("UserRepository", "Sign-up error for email $emails: ${e.message}")
                 throw e
             }
+        }
+    }
+
+    suspend fun insertUserInClients(name: String, email: String) {
+        supabaseClient.from("clients").update(
+            mapOf("name" to name)
+        ) {
+            filter { eq("email", email) }
         }
     }
 

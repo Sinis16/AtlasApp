@@ -121,14 +121,12 @@ class UserViewModel @Inject constructor(
         }
     }
 
-    fun signUpWithEmail(email: String, password: String, onResult: (Boolean, String?) -> Unit = { _, _ -> }) {
-        Log.d("UserViewModel", "Starting email sign-up: $email")
+    fun signUpWithEmail(name: String, email: String, password: String, onResult: (Boolean, String?) -> Unit = { _, _ -> }) {
+        Log.d("UserViewModel", "Starting email sign-up for email: $email, name: $name, password length: ${password.length}")
         viewModelScope.launch {
             try {
-                userRepository.signUpWithEmail(email, password)
-                Log.d("UserViewModel", "Email sign-up successful")
-                _isAuthenticated.value = true
-                loadUserClientInfo()
+                userRepository.signUpWithEmail(email, password, name)
+                Log.d("UserViewModel", "Email sign-up successful with name stored in metadata")
                 _error.value = null
                 onResult(true, null)
             } catch (e: Exception) {
@@ -141,12 +139,30 @@ class UserViewModel @Inject constructor(
                     e.message?.contains("invalid", ignoreCase = true) == true -> {
                         "Correo o contraseña inválidos"
                     }
+                    e.message?.contains("unexpected_failure", ignoreCase = true) == true -> {
+                        "Error en el servidor, intenta de nuevo más tarde"
+                    }
                     else -> {
                         "Error al registrarse: ${e.localizedMessage}"
                     }
                 }
                 _error.value = errorMessage
                 onResult(false, errorMessage)
+            }
+        }
+    }
+
+
+    fun insertUserInClients(name: String, email: String) {
+        viewModelScope.launch {
+            try {
+                Log.d("UserViewModel", "Updating clients table with name=$name for email=$email")
+                userRepository.insertUserInClients(name, email)
+                Log.d("UserViewModel", "Clients table updated successfully")
+                _error.value = null
+            } catch (e: Exception) {
+                Log.e("UserViewModel", "Error updating clients table: ${e.localizedMessage}", e)
+                _error.value = "Error al actualizar usuario: ${e.localizedMessage}"
             }
         }
     }
