@@ -39,7 +39,7 @@ fun AppNavHost(
     context: Context,
     lastReadRequestTimes: MutableMap<String, Long>,
     updateRate: MutableState<Long>,
-    tagDataMap: SnapshotStateMap<String, TagData>, // Add tagDataMap
+    tagDataMap: SnapshotStateMap<String, TagData>,
     onConnect: (String) -> Unit,
     onDisconnect: (String) -> Unit
 ) {
@@ -61,7 +61,7 @@ fun AppNavHost(
                 context = context,
                 lastReadRequestTimes = lastReadRequestTimes,
                 updateRate = updateRate,
-                tagDataMap = tagDataMap // Pass tagDataMap
+                tagDataMap = tagDataMap
             )
         }
         composable("connection") {
@@ -95,7 +95,19 @@ fun AppNavHost(
             )
         ) { backStackEntry ->
             val tagId = backStackEntry.arguments?.getString("tagId") ?: ""
-            TagScreen(navController = navController, tagId = tagId)
+            TagScreen(
+                navController = navController,
+                connectionStates = connectionStates,
+                foundDevices = foundDevices,
+                deviceData = deviceData,
+                connectionStartTimes = connectionStartTimes,
+                gattConnections = gattConnections,
+                context = context,
+                lastReadRequestTimes = lastReadRequestTimes,
+                updateRate = updateRate,
+                tagDataMap = tagDataMap,
+                tagId = tagId
+            )
         }
     }
 }

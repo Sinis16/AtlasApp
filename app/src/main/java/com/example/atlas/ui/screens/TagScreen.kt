@@ -1,65 +1,119 @@
 package com.example.atlas.ui.screens
 
+import android.bluetooth.BluetoothGatt
+import android.content.Context
+import android.util.Log
 import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.navigation.NavController
+import androidx.navigation.NavHostController
+import com.example.atlas.blescanner.model.BleDevice
 import com.example.atlas.models.TagData
 
-@Composable
-fun TagScreen(navController: NavController, tagId: String) {
-    val tagData = remember {
-        when (tagId) {
-            "tag1" -> TagData(id = "tag1", distance = 2.5, angle = 45.0, battery = 90)
-            "tag2" -> TagData(id = "tag2", distance = 3.8, angle = 120.0, battery = 75)
-            "tag3" -> TagData(id = "tag3", distance = 1.2, angle = 210.0, battery = 60)
-            else -> TagData(id = tagId, distance = 0.0, angle = 0.0, battery = 0)
-        }
-    }
+private const val TAG = "TagScreen"
 
-    var isSoundPlaying by remember { mutableStateOf(false) }
+@Composable
+fun TagScreen(
+    navController: NavHostController,
+    connectionStates: SnapshotStateMap<String, String>,
+    foundDevices: MutableList<BleDevice>,
+    deviceData: SnapshotStateMap<String, Map<String, String>>,
+    connectionStartTimes: MutableMap<String, Long>,
+    gattConnections: MutableMap<String, BluetoothGatt>,
+    context: Context,
+    lastReadRequestTimes: MutableMap<String, Long>,
+    updateRate: MutableState<Long>,
+    tagDataMap: SnapshotStateMap<String, TagData>,
+    tagId: String
+) {
+    val device = foundDevices.find { it.address == tagId }
+    val name = device?.name ?: "Unknown Device"
+    val data = deviceData[tagId] ?: emptyMap()
+    val tagData = tagDataMap[tagId]
+    val connectionState = connectionStates[tagId] ?: "Disconnected"
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp),
-        verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
-            text = "Tag: $tagId",
-            fontSize = 24.sp,
-            style = MaterialTheme.typography.headlineMedium
+            text = "Tag Details for $name",
+            style = MaterialTheme.typography.headlineSmall,
+            modifier = Modifier.padding(bottom = 16.dp)
         )
-        Spacer(modifier = Modifier.height(20.dp))
 
-        InfoCard(label = "Distance", value = "${"%.1f".format(tagData.distance)} cm")
-        InfoCard(label = "Angle", value = "${"%.1f".format(tagData.angle)}°")
-        InfoCard(label = "Battery", value = "${tagData.battery}%")
+        if (connectionState != "Connected") {
+            Text(
+                text = "Tag is not connected",
+                fontSize = 16.sp,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+        } else {
+            Text(
+                text = "Tag ID: $tagId",
+                fontSize = 16.sp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+            )
+            Text(
+                text = "Distance: ${data["Distance"] ?: "N/A"}",
+                fontSize = 16.sp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+            )
+            Text(
+                text = "Battery: ${data["Battery"] ?: "N/A"}",
+                fontSize = 16.sp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+            )
+            Text(
+                text = "RSSI: ${data["RSSI"] ?: "N/A"}",
+                fontSize = 16.sp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+            )
+            Text(
+                text = "Latency: ${data["Latency"] ?: "N/A"}",
+                fontSize = 16.sp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+            )
 
-        Spacer(modifier = Modifier.height(32.dp))
+            tagData?.let {
+                Log.d(TAG, "Tag data for $tagId: id=${it.id}, distance=${it.distance}, battery=${it.battery}")
+            } ?: run {
+                Log.w(TAG, "No tagData for $tagId")
+            }
+        }
+
+        Spacer(modifier = Modifier.weight(1f))
 
         Button(
             onClick = {
-                isSoundPlaying = !isSoundPlaying
-                // TODO: Implement sound emission logic
+                navController.popBackStack()
+                Log.d(TAG, "Navigating back from TagScreen for tagId: $tagId")
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 16.dp)
         ) {
-            Text(if (isSoundPlaying) "Stop Sound" else "Play Sound")
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        OutlinedButton(
-            onClick = { navController.popBackStack() },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Back to Home")
+            Text("Back")
         }
     }
 }

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -99,7 +100,10 @@ fun HomeScreen(
             ) {
                 items(connectedDevices.toList()) { address ->
                     val device = foundDevices.find { it.address == address }
-                    val name = device?.name ?: "Unknown Device"
+                    var name = device?.name ?: "Unknown Device"
+                    if(name == null){
+                        name = "Unknown Device"
+                    }
                     val battery = deviceData[address]?.get("Battery") ?: "N/A"
 
                     Box(
@@ -134,7 +138,10 @@ fun HomeScreen(
 
         selectedDeviceAddress?.let { address ->
             val device = foundDevices.find { it.address == address }
-            val name = device?.name ?: "Unknown Device"
+            var name = device?.name ?: "Unknown Device"
+            if(name == null){
+                name = "Unknown Device"
+            }
             val data = deviceData[address] ?: emptyMap()
             val tagData = tagDataMap[address]
 
@@ -144,33 +151,62 @@ fun HomeScreen(
                 modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
             )
 
-            LazyColumn(
+            var tagId: String? = null
+            val details = mutableListOf<String>()
+            // Add deviceData entries (e.g., Distance, Battery, RSSI, Latency)
+            data.entries.forEach { (key, value) ->
+                details.add("$key: $value")
+            }
+            // Add tagData fields with logging
+            tagData?.let {
+                Log.d(TAG, "Details for $address: id=${it.id}, distance=${it.distance}, battery=${it.battery}")
+                details.add("Tag ID: ${it.id}")
+                tagId = it.id
+            } ?: run {
+                // Fallback if tagData is null
+                Log.w(TAG, "No tagData for $address")
+                details.add("Tag ID: $address")
+                tagId = address
+            }
+
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 200.dp)
+                    .heightIn(max = 200.dp),
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                val details = mutableListOf<String>()
-                // Add deviceData entries (e.g., Distance, Battery, RSSI, Latency)
-                data.entries.forEach { (key, value) ->
-                    details.add("$key: $value")
+                LazyColumn(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 8.dp)
+                ) {
+                    items(details) { detail ->
+                        Text(
+                            text = detail,
+                            fontSize = 14.sp,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                        )
+                    }
                 }
-                // Add tagData fields with logging
-                tagData?.let {
-                    Log.d(TAG, "Details for $address: id=${it.id}, distance=${it.distance}, battery=${it.battery}")
-                    details.add("Tag ID: ${it.id}")
-                } ?: run {
-                    // Fallback if tagData is null
-                    Log.w(TAG, "No tagData for $address")
-                    details.add("Tag ID: $address")
-                }
-                items(details) { detail ->
-                    Text(
-                        text = detail,
-                        fontSize = 14.sp,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                    )
+                Column(
+                    modifier = Modifier
+                        .wrapContentWidth()
+                        .fillMaxHeight(),
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Button(
+                        onClick = {
+                            tagId?.let { id ->
+                                navController.navigate("tag/$id")
+                                Log.d(TAG, "Navigating to TagScreen for tagId: $id")
+                            }
+                        },
+                        modifier = Modifier.padding(start = 8.dp)
+                    ) {
+                        Text("Buscar")
+                    }
                 }
             }
         }
