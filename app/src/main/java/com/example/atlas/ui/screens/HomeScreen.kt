@@ -4,6 +4,7 @@ import android.Manifest
 import android.bluetooth.BluetoothGatt
 import android.content.Context
 import android.content.pm.PackageManager
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -25,6 +26,8 @@ import com.example.atlas.models.TagData
 import kotlinx.coroutines.delay
 import java.util.UUID
 
+private const val TAG = "HomeScreen"
+
 @Composable
 fun HomeScreen(
     navController: NavHostController,
@@ -36,7 +39,7 @@ fun HomeScreen(
     context: Context,
     lastReadRequestTimes: MutableMap<String, Long>,
     updateRate: MutableState<Long>,
-    tagDataMap: SnapshotStateMap<String, TagData> // Add tagDataMap
+    tagDataMap: SnapshotStateMap<String, TagData>
 ) {
     var selectedDeviceAddress by remember { mutableStateOf<String?>(null) }
 
@@ -69,7 +72,7 @@ fun HomeScreen(
                     }
                 }
             } else {
-                println("BLUETOOTH_CONNECT permission denied, skipping GATT reads")
+                Log.w(TAG, "BLUETOOTH_CONNECT permission denied, skipping GATT reads")
             }
             delay(updateRate.value)
         }
@@ -139,7 +142,7 @@ fun HomeScreen(
             val device = foundDevices.find { it.address == address }
             val name = device?.name ?: "Unknown Device"
             val data = deviceData[address] ?: emptyMap()
-            val tagData = tagDataMap[address] // Get TagData for device
+            val tagData = tagDataMap[address]
 
             Text(
                 text = "Details for $name",
@@ -152,12 +155,25 @@ fun HomeScreen(
                     .fillMaxWidth()
                     .heightIn(max = 200.dp)
             ) {
-                val details = data.entries.map { "${it.key}: ${it.value}" }.toMutableList()
+                val details = mutableListOf<String>()
+                // Add deviceData entries (e.g., Firmware, RSSI, Latency)
+                data.entries.forEach { (key, value) ->
+                    details.add("$key: $value")
+                }
+                // Add tagData fields with logging
                 tagData?.let {
+                    Log.d(TAG, "Details for $address: id=${it.id}, distance=${it.distance}, angle=${it.angle}, battery=${it.battery}")
                     details.add("Tag ID: ${it.id}")
                     details.add("Distance: ${String.format("%.2f", it.distance)} cm")
                     details.add("Angle: ${String.format("%.1f", it.angle)} deg")
                     details.add("Battery: ${it.battery}%")
+                } ?: run {
+                    // Fallback if tagData is null
+                    Log.w(TAG, "No tagData for $address")
+                    details.add("Tag ID: $address")
+                    details.add("Distance: 0.00 cm")
+                    details.add("Angle: 0.0 deg")
+                    details.add("Battery: 0%")
                 }
                 items(details) { detail ->
                     Text(

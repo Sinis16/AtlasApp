@@ -40,6 +40,7 @@ fun CardConnectionScreen(
     var isScanning by remember { mutableStateOf(false) }
     var showRationaleDialog by remember { mutableStateOf(false) }
     var rationaleMessage by remember { mutableStateOf("") }
+    var connectionError by remember { mutableStateOf<String?>(null) } // Track connection errors
 
     LaunchedEffect(Unit) {
         permissionManager.buildRequestResultsDispatcher {
@@ -60,6 +61,17 @@ fun CardConnectionScreen(
         }
     }
 
+    LaunchedEffect(connectionStates) {
+        connectionStates.forEach { (address, state) ->
+            if (state == "Disconnected" && connectionError == null) {
+                val retries = connectionStates[address + "_retries"]?.toIntOrNull() ?: 0
+                if (retries >= 3) {
+                    connectionError = "Failed to connect to $address after 3 attempts"
+                }
+            }
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -67,6 +79,16 @@ fun CardConnectionScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Top
     ) {
+        // Show connection error
+        connectionError?.let { error ->
+            Text(
+                text = error,
+                color = MaterialTheme.colorScheme.error,
+                fontSize = 14.sp,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+        }
+
         // Show connected devices with Disconnect button
         val connectedDevices = connectionStates.filter { it.value == "Connected" }.keys
         LaunchedEffect(connectionStates) {
@@ -122,6 +144,7 @@ fun CardConnectionScreen(
             onClick = {
                 if (!isScanning) {
                     permissionManager checkRequestAndDispatch 1
+                    connectionError = null // Clear error on new scan
                 }
             },
             enabled = !isScanning,
@@ -150,7 +173,10 @@ fun CardConnectionScreen(
                         device = device,
                         connectionState = connectionStates[device.address] ?: "Disconnected",
                         isSavedDevice = device.address == savedDeviceAddress.value,
-                        onConnect = onConnect
+                        onConnect = { address ->
+                            connectionError = null // Clear error on new connection attempt
+                            onConnect(address)
+                        }
                     )
                 }
             }
@@ -205,12 +231,12 @@ fun DeviceItem(
     ) {
         Column {
             Text(
-                text = device.name ?: "Unknown", // Name in bold
+                text = device.name ?: "Unknown",
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Bold
             )
             Text(
-                text = "Address: ${device.address}", // Address below, not bold
+                text = "Address: ${device.address}",
                 fontSize = 14.sp
             )
             Text(

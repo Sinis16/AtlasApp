@@ -45,7 +45,7 @@ fun TagCard(tag: TagData, onClick: () -> Unit) {
         ) {
             Text(text = "Tag: ${tag.id}", fontSize = 18.sp)
             Column(horizontalAlignment = Alignment.End) {
-                Text(text = "Distance: ${"%.1f".format(tag.distance)} cm", fontSize = 16.sp)
+                Text(text = "Distance: ${"%.1f".format(tag.distance)} m", fontSize = 16.sp)
                 Text(text = "Angle: ${"%.1f".format(tag.angle)}°", fontSize = 16.sp)
                 Text(text = "Battery: ${tag.battery}%", fontSize = 16.sp)
             }
