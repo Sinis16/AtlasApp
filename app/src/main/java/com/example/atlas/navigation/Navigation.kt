@@ -19,6 +19,7 @@ import com.example.atlas.data.repository.UserRepository
 import com.example.atlas.models.TagData
 import com.example.atlas.permissions.PermissionManager
 import com.example.atlas.ui.screens.CardConnectionScreen
+import com.example.atlas.ui.screens.ChangeDataScreen
 import com.example.atlas.ui.screens.HomeScreen
 import com.example.atlas.ui.screens.LogInScreen
 import com.example.atlas.ui.screens.ProfileScreen
@@ -45,7 +46,7 @@ fun AppNavHost(
     leaveBehindDistance: MutableState<Long>,
     isLeaveBehindEnabled: MutableState<Boolean>,
     isAdvancedMode: MutableState<Boolean>,
-    userRepository: UserRepository,// Added isAdvancedMode parameter
+    userRepository: UserRepository,
     onConnect: (String) -> Unit,
     onDisconnect: (String) -> Unit
 ) {
@@ -70,7 +71,7 @@ fun AppNavHost(
                 tagDataMap = tagDataMap,
                 leaveBehindDistance = leaveBehindDistance,
                 isLeaveBehindEnabled = isLeaveBehindEnabled,
-                isAdvancedMode = isAdvancedMode // Pass isAdvancedMode
+                isAdvancedMode = isAdvancedMode
             )
         }
         composable("connection") {
@@ -94,7 +95,7 @@ fun AppNavHost(
                 updateRate = updateRate,
                 leaveBehindDistance = leaveBehindDistance,
                 isLeaveBehindEnabled = isLeaveBehindEnabled,
-                isAdvancedMode = isAdvancedMode // Pass isAdvancedMode
+                isAdvancedMode = isAdvancedMode
             )
         }
         composable(
@@ -120,6 +121,9 @@ fun AppNavHost(
                 tagDataMap = tagDataMap,
                 tagId = tagId
             )
+        }
+        composable("changeData") {
+            ChangeDataScreen(navController = navController)
         }
     }
 }

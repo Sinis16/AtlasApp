@@ -9,16 +9,19 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
+import com.example.atlas.R
 import com.example.atlas.ui.viewmodel.UserViewModel
 
 @Composable
@@ -28,13 +31,14 @@ fun RegisterScreen(
 ) {
     val context = LocalContext.current
     val isAuthenticated by userViewModel.isAuthenticated.collectAsStateWithLifecycle()
-    var name by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
     var acceptTerms by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(false) }
+    var isPasswordVisible by remember { mutableStateOf(false) }
+    var isConfirmPasswordVisible by remember { mutableStateOf(false) }
 
     // Navigate to home if already authenticated
     LaunchedEffect(isAuthenticated) {
@@ -58,19 +62,6 @@ fun RegisterScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Name TextField
-        OutlinedTextField(
-            value = name,
-            onValueChange = { if (it.length <= 50) name = it },
-            label = { Text("Name") },
-            modifier = Modifier.fillMaxWidth(),
-            isError = errorMessage != null && name.isBlank(),
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
         // Email TextField
         OutlinedTextField(
             value = email,
@@ -82,40 +73,62 @@ fun RegisterScreen(
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
-        // Password TextField
+        // Password TextField with Eye Icon
         OutlinedTextField(
             value = password,
-            onValueChange = { if (it.length <= 21) password = it },
-            label = { Text("Password") },
-            visualTransformation = PasswordVisualTransformation(),
-            modifier = Modifier.fillMaxWidth(),
-            isError = errorMessage != null && password.isBlank(),
+            onValueChange = { if (it.length <= 22) password = it },
+            label = { Text("Contraseña") },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 16.dp),
+            visualTransformation = if (isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
             singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+            isError = errorMessage != null && password.isBlank(),
+            trailingIcon = {
+                IconButton(onClick = { isPasswordVisible = !isPasswordVisible }) {
+                    Icon(
+                        painter = painterResource(
+                            if (isPasswordVisible) R.drawable.ic_eye_off else R.drawable.ic_eye_on
+                        ),
+                        contentDescription = if (isPasswordVisible) "Ocultar contraseña" else "Mostrar contraseña"
+                    )
+                }
+            }
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Confirm Password TextField
+        // Confirm Password TextField with Eye Icon
         OutlinedTextField(
             value = confirmPassword,
-            onValueChange = { if (it.length <= 21) confirmPassword = it },
-            label = { Text("Confirm Password") },
-            visualTransformation = PasswordVisualTransformation(),
-            modifier = Modifier.fillMaxWidth(),
-            isError = errorMessage != null && (confirmPassword.isBlank() || confirmPassword != password),
+            onValueChange = { if (it.length <= 22) confirmPassword = it },
+            label = { Text("Confirmar Contraseña") },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 16.dp),
+            visualTransformation = if (isConfirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
             singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+            isError = errorMessage != null && (confirmPassword.isBlank() || confirmPassword != password),
+            trailingIcon = {
+                IconButton(onClick = { isConfirmPasswordVisible = !isConfirmPasswordVisible }) {
+                    Icon(
+                        painter = painterResource(
+                            if (isConfirmPasswordVisible) R.drawable.ic_eye_off else R.drawable.ic_eye_on
+                        ),
+                        contentDescription = if (isConfirmPasswordVisible) "Ocultar contraseña" else "Mostrar contraseña"
+                    )
+                }
+            }
         )
 
         // Password length warning
         Text(
-            text = "Password must be between 8 and 21 characters.",
+            text = "Password must be between 8 and 22 characters.",
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.error,
-            modifier = Modifier.padding(top = 8.dp, bottom = 8.dp)
+            modifier = Modifier.padding(bottom = 8.dp)
         )
 
         // Error message
@@ -148,7 +161,7 @@ fun RegisterScreen(
             onClick = {
                 errorMessage = null
                 when {
-                    name.isBlank() || email.isBlank() || password.isBlank() || confirmPassword.isBlank() -> {
+                    email.isBlank() || password.isBlank() || confirmPassword.isBlank() -> {
                         errorMessage = "Please fill in all fields"
                     }
                     password.length < 8 || confirmPassword.length < 8 -> {
@@ -165,7 +178,9 @@ fun RegisterScreen(
                     }
                     else -> {
                         isLoading = true
-                        userViewModel.signUpWithEmail(name, email, password) { success, errorMsg ->
+                        // Derive name from email (part before @)
+                        val derivedName = email.substringBefore("@")
+                        userViewModel.signUpWithEmail(derivedName, email, password) { success, errorMsg ->
                             isLoading = false
                             if (success) {
                                 Toast.makeText(

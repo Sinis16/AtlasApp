@@ -89,6 +89,23 @@ class UserRepository @Inject constructor(
         }
     }
 
+    suspend fun checkClientExists(userId: String): Boolean {
+        val result = supabaseClient.from("clients").select {
+            filter { eq("id", userId) }
+        }.decodeList<User>()
+        return result.isNotEmpty()
+    }
+
+    suspend fun insertClient(id: String, email: String, name: String) {
+        supabaseClient.from("clients").insert(
+            mapOf(
+                "id" to id,
+                "email" to email,
+                "name" to name
+            )
+        )
+    }
+
     suspend fun insertUserInClients(name: String, email: String) {
         supabaseClient.from("clients").update(
             mapOf("name" to name)
@@ -165,30 +182,21 @@ class UserRepository @Inject constructor(
 
     suspend fun getCurrentClient(): User? {
         try {
-            // Get current session's user
-            val authUser = supabaseClient.auth.retrieveUserForCurrentSession(updateSession = true)
-            Log.d("ClientFetch", "Session user: id=${authUser?.id ?: "none"}, email=${authUser?.email ?: "none"}")
-
-            if (authUser == null) {
-                Log.d("ClientFetch", "No auth user found")
-                return null
-            }
-
-            // Query clients table
-            val client = supabaseClient
-                .from("clients")
-                .select(columns = Columns.list("id", "name", "email")) {
+            val currentUser = supabaseClient.auth.currentUserOrNull()
+            Log.d("UserRepository", "Current auth user: $currentUser")
+            if (currentUser == null) return null
+            val client = supabaseClient.from("clients")
+                .select() {
                     filter {
-                        eq("id", authUser.id)
+                        eq("id", currentUser.id)
                     }
                 }
                 .decodeSingleOrNull<User>()
-
-            Log.d("ClientFetch", "Client from DB: ${client?.toString() ?: "none"}")
+            Log.d("UserRepository", "Fetched client: $client")
             return client
         } catch (e: Exception) {
-            Log.e("ClientFetch", "Error fetching client: ${e.localizedMessage}", e)
-            return null
+            Log.e("UserRepository", "Error fetching client: ${e.localizedMessage}", e)
+            throw e
         }
     }
 
@@ -305,6 +313,40 @@ class UserRepository @Inject constructor(
                 Log.e("UserRepository", "Error checking email in clients: ${e.localizedMessage}", e)
                 false
             }
+        }
+    }
+
+
+    suspend fun updateUserData(newUsername: String?, newPassword: String?): Boolean {
+        try {
+            val currentUser = supabaseClient.auth.currentUserOrNull()
+            if (currentUser == null) {
+                Log.w("UserRepository", "No authenticated user")
+                throw Exception("No authenticated user")
+            }
+
+            // Update username in clients table
+            if (!newUsername.isNullOrBlank()) {
+                supabaseClient.from("clients").update(
+                    { set("name", newUsername) }
+                ) {
+                    filter { eq("id", currentUser.id) }
+                }
+                Log.d("UserRepository", "Updated username to: $newUsername")
+            }
+
+            // Update password in auth.users
+            if (!newPassword.isNullOrBlank()) {
+                supabaseClient.auth.updateUser {
+                    password = newPassword
+                }
+                Log.d("UserRepository", "Updated password")
+            }
+
+            return true
+        } catch (e: Exception) {
+            Log.e("UserRepository", "Error updating user data: ${e.localizedMessage}", e)
+            throw e
         }
     }
 

@@ -10,7 +10,6 @@ import com.example.atlas.models.User
 import com.example.atlas.data.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -19,7 +18,7 @@ import javax.inject.Inject
 @HiltViewModel
 class UserViewModel @Inject constructor(
     private val userRepository: UserRepository,
-    @ApplicationContext private val context: Context // Inject Context for SharedPreferences
+    @ApplicationContext private val context: Context
 ) : ViewModel() {
 
     private val _user = MutableStateFlow<User?>(null)
@@ -31,7 +30,6 @@ class UserViewModel @Inject constructor(
     val isAuthenticated: StateFlow<Boolean> = _isAuthenticated
     val error: StateFlow<String?> = _error
 
-    // Initialize SharedPreferences
     private val sharedPreferences: SharedPreferences =
         context.getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
 
@@ -48,6 +46,14 @@ class UserViewModel @Inject constructor(
             _hasCompletedInfo.value = !userData?.name.isNullOrEmpty()
             Log.d("UserViewModel", "hasCompletedInfo: ${_hasCompletedInfo.value}")
             _error.value = null
+
+            // Check and insert user into clients table
+            if (userData != null) {
+                checkAndInsertClient(userData)
+            } else {
+                Log.w("UserViewModel", "No user session found, skipping clients check")
+            }
+
             return userData
         } catch (e: Exception) {
             Log.e("UserViewModel", "Error loading user auth: ${e.localizedMessage}", e)
@@ -66,7 +72,6 @@ class UserViewModel @Inject constructor(
             Log.d("UserViewModel", "hasCompletedInfo: ${_hasCompletedInfo.value}")
             _error.value = null
 
-            // Save user ID and name to SharedPreferences if userData is not null
             if (userData != null) {
                 sharedPreferences.edit().putString(KEY_USER_ID, userData.id).apply()
                 sharedPreferences.edit().putString("${userData.id}_name", userData.name).apply()
@@ -82,17 +87,24 @@ class UserViewModel @Inject constructor(
         }
     }
 
-    suspend fun insertUserInClients() {
-        viewModelScope.launch {
-            try {
-                Log.d("UserViewModel", "Inserting user into clients table")
-                userRepository.insertUserInClients()
-                Log.d("UserViewModel", "User inserted successfully")
-                loadUserClientInfo() // Refresh user data
-            } catch (e: Exception) {
-                Log.e("UserViewModel", "Error inserting user: ${e.localizedMessage}", e)
-                _error.value = "Error al insertar usuario: ${e.localizedMessage}"
+    private suspend fun checkAndInsertClient(user: User) {
+        try {
+            Log.d("UserViewModel", "Checking clients table for user ID: ${user.id}")
+            val exists = userRepository.checkClientExists(user.id)
+            if (!exists) {
+                Log.d("UserViewModel", "User ID ${user.id} not found in clients, inserting new record")
+                userRepository.insertClient(
+                    id = user.id,
+                    email = user.email,
+                    name = user.name.toString()
+                )
+                Log.d("UserViewModel", "Inserted client record for user ID: ${user.id}, email: ${user.email}, name: ${user.name}")
+            } else {
+                Log.d("UserViewModel", "User ID ${user.id} already exists in clients")
             }
+        } catch (e: Exception) {
+            Log.e("UserViewModel", "Error checking or inserting client record: ${e.localizedMessage}", e)
+            _error.value = "Error al verificar o insertar cliente: ${e.localizedMessage}"
         }
     }
 
@@ -101,9 +113,8 @@ class UserViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 userRepository.signInWithEmail(email, password)
-                delay(1000)
                 _isAuthenticated.value = true
-                loadUserClientInfo()
+                loadUserAuthInfo() // Load auth info to trigger client check
                 Log.d("UserViewModel", "Email sign-in successful")
                 _error.value = null
                 onResult(true, null)
@@ -152,27 +163,12 @@ class UserViewModel @Inject constructor(
         }
     }
 
-
-    fun insertUserInClients(name: String, email: String) {
-        viewModelScope.launch {
-            try {
-                Log.d("UserViewModel", "Updating clients table with name=$name for email=$email")
-                userRepository.insertUserInClients(name, email)
-                Log.d("UserViewModel", "Clients table updated successfully")
-                _error.value = null
-            } catch (e: Exception) {
-                Log.e("UserViewModel", "Error updating clients table: ${e.localizedMessage}", e)
-                _error.value = "Error al actualizar usuario: ${e.localizedMessage}"
-            }
-        }
-    }
-
     fun updateAuthUser(name: String) {
         viewModelScope.launch {
             try {
                 Log.d("UserViewModel", "Updating auth user: name=$name")
                 userRepository.updateAuthUser(name)
-                loadUserClientInfo() // Refresh user data
+                loadUserAuthInfo() // Refresh auth info to trigger client check
                 Log.d("UserViewModel", "Auth user update successful")
                 _error.value = null
             } catch (e: Exception) {
@@ -187,7 +183,7 @@ class UserViewModel @Inject constructor(
             try {
                 Log.d("UserViewModel", "Updating clients user: name=$name")
                 userRepository.updateClientsUser(name)
-                loadUserClientInfo() // Refresh user data
+                loadUserClientInfo() // Refresh client info
                 Log.d("UserViewModel", "Clients user update successful")
                 _error.value = null
             } catch (e: Exception) {
@@ -199,23 +195,28 @@ class UserViewModel @Inject constructor(
 
     fun checkUserSession(onResult: (Boolean) -> Unit) {
         viewModelScope.launch {
-            try {
-                val hasSession = userRepository.checkUserSession()
-                if (hasSession) {
-                    _isAuthenticated.value = true
-                    loadUserClientInfo()
-                    Log.d("UserViewModel", "Session check successful")
-                    _error.value = null
-                } else {
-                    Log.e("UserViewModel", "No active session found")
-                    _error.value = "No se encontró una sesión activa"
-                }
-                onResult(hasSession)
-            } catch (e: Exception) {
-                Log.e("UserViewModel", "Session check error: ${e.localizedMessage}", e)
-                _error.value = "Error al verificar sesión: ${e.localizedMessage}"
-                onResult(false)
+            val hasSession = checkUserSession()
+            onResult(hasSession)
+        }
+    }
+
+    suspend fun checkUserSession(): Boolean {
+        return try {
+            val hasSession = userRepository.checkUserSession()
+            if (hasSession) {
+                _isAuthenticated.value = true
+                loadUserAuthInfo() // Load auth info to trigger client check
+                Log.d("UserViewModel", "Session check successful")
+                _error.value = null
+            } else {
+                Log.e("UserViewModel", "No active session found")
+                _error.value = "No se encontró una sesión activa"
             }
+            hasSession
+        } catch (e: Exception) {
+            Log.e("UserViewModel", "Session check error: ${e.localizedMessage}", e)
+            _error.value = "Error al verificar sesión: ${e.localizedMessage}"
+            false
         }
     }
 
@@ -226,7 +227,6 @@ class UserViewModel @Inject constructor(
                 _isAuthenticated.value = false
                 _user.value = null
                 _error.value = null
-                // Clear user ID from SharedPreferences on logout
                 sharedPreferences.edit().remove(KEY_USER_ID).apply()
                 Log.d("UserViewModel", "Cleared user ID from SharedPreferences on logout")
                 Toast.makeText(context, "Logged out successfully!", Toast.LENGTH_SHORT).show()
@@ -258,7 +258,7 @@ class UserViewModel @Inject constructor(
             Log.d("UserViewModel", "Verifying recovery OTP for email: $email, token: $token")
             userRepository.verifyRecoveryOtp(email, token)
             _isAuthenticated.value = true
-            loadUserClientInfo()
+            loadUserAuthInfo() // Load auth info to trigger client check
             Log.d("UserViewModel", "Recovery OTP verified")
             _error.value = null
         } catch (e: Exception) {
@@ -301,7 +301,7 @@ class UserViewModel @Inject constructor(
             try {
                 userRepository.verifyEmailOtp(email, token)
                 _isAuthenticated.value = true
-                loadUserClientInfo()
+                loadUserAuthInfo() // Load auth info to trigger client check
                 Log.d("UserViewModel", "Email verification successful for $email")
                 _error.value = null
                 onResult(true)
@@ -333,7 +333,7 @@ class UserViewModel @Inject constructor(
             try {
                 userRepository.exchangeCodeForSession(code)
                 _isAuthenticated.value = true
-                loadUserClientInfo()
+                loadUserAuthInfo() // Load auth info to trigger client check
                 Log.d("UserViewModel", "Session exchanged successfully for code=$code")
                 _error.value = null
                 onResult(true)
@@ -350,10 +350,30 @@ class UserViewModel @Inject constructor(
         return _user.value?.id
     }
 
-    // Function to get the user ID from SharedPreferences when offline
     fun getSavedUserId(): String? {
         val userId = sharedPreferences.getString(KEY_USER_ID, null)
         Log.d("UserViewModel", "Retrieved user ID from SharedPreferences: $userId")
         return userId
+    }
+
+    fun updateUserData(
+        newUsername: String?,
+        newPassword: String?,
+        context: Context,
+        callback: (Boolean, String?) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                userRepository.updateUserData(newUsername, newPassword)
+                Log.d("UserViewModel", "User data updated successfully")
+                loadUserClientInfo()
+                callback(true, null)
+            } catch (e: Exception) {
+                Log.e("UserViewModel", "Error updating user data: ${e.localizedMessage}", e)
+                val errorMessage = "Error al actualizar datos: ${e.localizedMessage}"
+                _error.value = errorMessage
+                callback(false, errorMessage)
+            }
+        }
     }
 }

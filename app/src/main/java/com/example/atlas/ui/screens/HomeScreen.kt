@@ -17,18 +17,17 @@ import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.lerp // Added import for lerp
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import androidx.core.app.ActivityCompat
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.example.atlas.blescanner.model.BleDevice
 import com.example.atlas.models.TagData
+import com.example.atlas.ui.viewmodel.UserViewModel
 import kotlinx.coroutines.delay
 import java.util.UUID
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
 
 private const val TAG = "HomeScreen"
 
@@ -46,48 +45,31 @@ fun HomeScreen(
     tagDataMap: SnapshotStateMap<String, TagData>,
     leaveBehindDistance: MutableState<Long>,
     isLeaveBehindEnabled: MutableState<Boolean>,
-    isAdvancedMode: MutableState<Boolean>
+    isAdvancedMode: MutableState<Boolean>,
+    viewModel: UserViewModel = hiltViewModel()
 ) {
     var selectedDeviceAddress by remember { mutableStateOf<String?>(null) }
-    var notificationDeviceAddress by remember { mutableStateOf<String?>(null) }
-    val notificationState = remember { mutableStateMapOf<String, NotificationStatus>() }
 
     val BATTERY_SERVICE_UUID = UUID.fromString("0000180F-0000-1000-8000-00805F9B34FB")
     val BATTERY_LEVEL_UUID = UUID.fromString("00002A19-0000-1000-8000-00805F9B34FB")
 
-    // Monitor distances and manage notifications
-    LaunchedEffect(tagDataMap, connectionStates, leaveBehindDistance.value, isLeaveBehindEnabled.value) {
-        while (true) {
-            val connectedDevices = connectionStates.filter { it.value == "Connected" }.keys
-            for (address in connectedDevices) {
-                val distance = tagDataMap[address]?.distance ?: 0.0
-                val currentStatus = notificationState[address] ?: NotificationStatus.None
-                val threshold = leaveBehindDistance.value.toDouble()
-
-                when {
-                    distance > threshold && currentStatus == NotificationStatus.None -> {
-                        notificationDeviceAddress = address
-                        notificationState[address] = NotificationStatus.Shown
-                        Log.d(TAG, "Showing notification for $address: distance=$distance cm, threshold=$threshold cm")
-                    }
-                    distance <= threshold && (currentStatus == NotificationStatus.Ignored || currentStatus == NotificationStatus.Shown) -> {
-                        notificationState[address] = NotificationStatus.None
-                        if (notificationDeviceAddress == address) {
-                            notificationDeviceAddress = null
-                        }
-                        Log.d(TAG, "Reset notification state for $address: distance=$distance cm, threshold=$threshold cm")
-                    }
-                    distance > threshold && currentStatus is NotificationStatus.PendingRetrigger -> {
-                        val pendingTime = currentStatus.timestamp
-                        if (System.currentTimeMillis() - pendingTime >= 10_000) {
-                            notificationDeviceAddress = address
-                            notificationState[address] = NotificationStatus.Shown
-                            Log.d(TAG, "Re-triggering notification for $address: distance=$distance cm, threshold=$threshold cm")
-                        }
-                    }
+    // Load user data from clients table and validate session
+    LaunchedEffect(Unit) {
+        Log.d(TAG, "Checking user session")
+        try {
+            val hasSession = viewModel.checkUserSession()
+            if (!hasSession) {
+                Log.d(TAG, "No active session, navigating to logIn")
+                navController.navigate("logIn") {
+                    popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                    launchSingleTop = true
                 }
+            } else {
+                Log.d(TAG, "Triggering loadUserClientInfo")
+                viewModel.loadUserClientInfo()
             }
-            delay(1000)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking session or loading user client info: ${e.localizedMessage}", e)
         }
     }
 
@@ -284,99 +266,4 @@ fun HomeScreen(
             }
         }
     }
-
-    // Notification Dialog
-    notificationDeviceAddress?.let { address ->
-        val device = foundDevices.find { it.address == address }
-        var name = device?.name ?: "Unknown Device"
-        if (name == null) {
-            name = "Unknown Device"
-        }
-        val tagData = tagDataMap[address]
-        val tagId = tagData?.id ?: address
-
-        Dialog(
-            onDismissRequest = {
-                notificationDeviceAddress = null
-                notificationState[address] = NotificationStatus.PendingRetrigger(System.currentTimeMillis())
-                Log.d(TAG, "Notification closed for $address, pending re-trigger after 10s")
-            }
-        ) {
-            Surface(
-                modifier = Modifier
-                    .padding(16.dp)
-                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp)),
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .padding(16.dp)
-                        .fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Objeto fuera de rango",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        IconButton(
-                            onClick = {
-                                notificationDeviceAddress = null
-                                notificationState[address] = NotificationStatus.PendingRetrigger(System.currentTimeMillis())
-                                Log.d(TAG, "X button clicked for $address, pending re-trigger after 10s")
-                            }
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Close",
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Estás dejando atrás el objeto $name",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        TextButton(
-                            onClick = {
-                                notificationDeviceAddress = null
-                                notificationState[address] = NotificationStatus.Ignored
-                                Log.d(TAG, "Ignorar clicked for $address, suppressing notification")
-                            }
-                        ) {
-                            Text("Ignorar")
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        TextButton(
-                            onClick = {
-                                navController.navigate("tag/$tagId")
-                                notificationDeviceAddress = null
-                                notificationState[address] = NotificationStatus.None
-                                Log.d(TAG, "Buscar clicked for $address, navigating to TagScreen")
-                            }
-                        ) {
-                            Text("Buscar")
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-// Sealed class to track notification status per device
-private sealed class NotificationStatus {
-    object None : NotificationStatus()
-    object Shown : NotificationStatus()
-    object Ignored : NotificationStatus()
-    data class PendingRetrigger(val timestamp: Long) : NotificationStatus()
 }
