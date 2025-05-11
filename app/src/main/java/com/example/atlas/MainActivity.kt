@@ -37,7 +37,6 @@ import com.example.atlas.ui.components.BottomNavBar
 import com.example.atlas.ui.components.TopNavBar
 import com.example.atlas.ui.theme.AtlasTheme
 import androidx.compose.ui.platform.LocalContext
-import java.nio.ByteBuffer
 import java.util.UUID
 
 class MainActivity : ComponentActivity() {
@@ -424,40 +423,31 @@ class MainActivity : ComponentActivity() {
                                     }
                                 }
                                 DISTANCE_CHAR_UUID -> {
-                                    if (bytes.size >= 4) {
-                                        try {
-                                            val distanceMeters = ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.LITTLE_ENDIAN).float
-                                            if (distanceMeters.isFinite()) {
-                                                val distanceCm = distanceMeters * 100.0
-                                                tagDataMap[address] = currentTagData.copy(distance = distanceCm.toDouble())
-                                                deviceData[address] = (deviceData[address] ?: emptyMap()) + ("Distance" to String.format("%.2f cm", distanceCm))
-                                                Log.d(TAG, "Distance notification for $address: $distanceCm cm")
-                                            } else {
-                                                Log.w(TAG, "Invalid distance value: $distanceMeters")
-                                            }
-                                        } catch (e: Exception) {
-                                            Log.e(TAG, "Failed to parse distance for $address: ${e.message}")
+                                    try {
+                                        val distanceCm = String(bytes).toDouble()
+                                        if (distanceCm.isFinite()) {
+                                            tagDataMap[address] = currentTagData.copy(distance = distanceCm)
+                                            deviceData[address] = (deviceData[address] ?: emptyMap()) + ("Distance" to String.format("%.2f cm", distanceCm))
+                                            Log.d(TAG, "Distance notification for $address: $distanceCm cm")
+                                        } else {
+                                            Log.w(TAG, "Invalid distance value: $distanceCm")
                                         }
-                                    } else {
-                                        Log.e(TAG, "Insufficient bytes for distance: ${bytes.size}")
+                                    } catch (e: Exception) {
+                                        Log.e(TAG, "Failed to parse distance for $address: ${e.message}")
                                     }
                                 }
                                 ANGLE_CHAR_UUID -> {
-                                    if (bytes.size >= 4) {
-                                        try {
-                                            val angleDegrees = ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.LITTLE_ENDIAN).float
-                                            if (angleDegrees.isFinite()) {
-                                                tagDataMap[address] = currentTagData.copy(angle = angleDegrees.toDouble())
-                                                deviceData[address] = (deviceData[address] ?: emptyMap()) + ("Angle" to String.format("%.1f deg", angleDegrees))
-                                                Log.d(TAG, "Angle notification for $address: $angleDegrees deg")
-                                            } else {
-                                                Log.w(TAG, "Invalid angle value: $angleDegrees")
-                                            }
-                                        } catch (e: Exception) {
-                                            Log.e(TAG, "Failed to parse angle for $address: ${e.message}")
+                                    try {
+                                        val angleDegrees = String(bytes).toDouble()
+                                        if (angleDegrees.isFinite()) {
+                                            tagDataMap[address] = currentTagData.copy(angle = angleDegrees)
+                                            deviceData[address] = (deviceData[address] ?: emptyMap()) + ("Angle" to String.format("%.1f deg", angleDegrees))
+                                            Log.d(TAG, "Angle notification for $address: $angleDegrees deg")
+                                        } else {
+                                            Log.w(TAG, "Invalid angle value: $angleDegrees")
                                         }
-                                    } else {
-                                        Log.e(TAG, "Insufficient bytes for angle: ${bytes.size}")
+                                    } catch (e: Exception) {
+                                        Log.e(TAG, "Failed to parse angle for $address: ${e.message}")
                                     }
                                 }
                             }
