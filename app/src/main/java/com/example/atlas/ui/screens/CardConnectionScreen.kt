@@ -40,7 +40,7 @@ fun CardConnectionScreen(
     var isScanning by remember { mutableStateOf(false) }
     var showRationaleDialog by remember { mutableStateOf(false) }
     var rationaleMessage by remember { mutableStateOf("") }
-    var connectionError by remember { mutableStateOf<String?>(null) } // Track connection errors
+    var connectionError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         permissionManager.buildRequestResultsDispatcher {
@@ -56,17 +56,6 @@ fun CardConnectionScreen(
                 }
                 doOnDenied {
                     Log.d("CardConnectionScreen", "Permissions denied")
-                }
-            }
-        }
-    }
-
-    LaunchedEffect(connectionStates) {
-        connectionStates.forEach { (address, state) ->
-            if (state == "Disconnected" && connectionError == null) {
-                val retries = connectionStates[address + "_retries"]?.toIntOrNull() ?: 0
-                if (retries >= 3) {
-                    connectionError = "Failed to connect to $address after 3 attempts"
                 }
             }
         }
@@ -144,7 +133,7 @@ fun CardConnectionScreen(
             onClick = {
                 if (!isScanning) {
                     permissionManager checkRequestAndDispatch 1
-                    connectionError = null // Clear error on new scan
+                    connectionError = null
                 }
             },
             enabled = !isScanning,
@@ -174,7 +163,7 @@ fun CardConnectionScreen(
                         connectionState = connectionStates[device.address] ?: "Disconnected",
                         isSavedDevice = device.address == savedDeviceAddress.value,
                         onConnect = { address ->
-                            connectionError = null // Clear error on new connection attempt
+                            connectionError = null
                             onConnect(address)
                         }
                     )
