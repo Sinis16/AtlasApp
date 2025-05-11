@@ -157,7 +157,9 @@ fun CardConnectionScreen(
             LazyColumn(
                 modifier = Modifier.fillMaxWidth()
             ) {
-                items(foundDevices) { device ->
+                items(
+                    foundDevices.filter { it.name != null && it.name != "Unknown" }.toList()
+                ) { device ->
                     DeviceItem(
                         device = device,
                         connectionState = connectionStates[device.address] ?: "Disconnected",
