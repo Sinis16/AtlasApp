@@ -45,8 +45,6 @@ fun HomeScreen(
 
     val BATTERY_SERVICE_UUID = UUID.fromString("0000180F-0000-1000-8000-00805F9B34FB")
     val BATTERY_LEVEL_UUID = UUID.fromString("00002A19-0000-1000-8000-00805F9B34FB")
-    val DEVICE_INFO_SERVICE_UUID = UUID.fromString("0000180A-0000-1000-8000-00805F9B34FB")
-    val FIRMWARE_VERSION_UUID = UUID.fromString("00002A26-0000-1000-8000-00805F9B34FB")
 
     LaunchedEffect(updateRate.value) {
         while (true) {
@@ -62,10 +60,6 @@ fun HomeScreen(
                         lastReadRequestTimes[address] = currentTime
                         val batteryService = gatt.getService(BATTERY_SERVICE_UUID)
                         batteryService?.getCharacteristic(BATTERY_LEVEL_UUID)?.let { char ->
-                            gatt.readCharacteristic(char)
-                        }
-                        val deviceInfoService = gatt.getService(DEVICE_INFO_SERVICE_UUID)
-                        deviceInfoService?.getCharacteristic(FIRMWARE_VERSION_UUID)?.let { char ->
                             gatt.readCharacteristic(char)
                         }
                         gatt.readRemoteRssi()
@@ -156,24 +150,18 @@ fun HomeScreen(
                     .heightIn(max = 200.dp)
             ) {
                 val details = mutableListOf<String>()
-                // Add deviceData entries (e.g., Firmware, RSSI, Latency)
+                // Add deviceData entries (e.g., Distance, Battery, RSSI, Latency)
                 data.entries.forEach { (key, value) ->
                     details.add("$key: $value")
                 }
                 // Add tagData fields with logging
                 tagData?.let {
-                    Log.d(TAG, "Details for $address: id=${it.id}, distance=${it.distance}, angle=${it.angle}, battery=${it.battery}")
+                    Log.d(TAG, "Details for $address: id=${it.id}, distance=${it.distance}, battery=${it.battery}")
                     details.add("Tag ID: ${it.id}")
-                    details.add("Distance: ${String.format("%.2f", it.distance)} cm")
-                    details.add("Angle: ${String.format("%.1f", it.angle)} deg")
-                    details.add("Battery: ${it.battery}%")
                 } ?: run {
                     // Fallback if tagData is null
                     Log.w(TAG, "No tagData for $address")
                     details.add("Tag ID: $address")
-                    details.add("Distance: 0.00 cm")
-                    details.add("Angle: 0.0 deg")
-                    details.add("Battery: 0%")
                 }
                 items(details) { detail ->
                     Text(

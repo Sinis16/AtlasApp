@@ -45,11 +45,8 @@ class MainActivity : ComponentActivity() {
     private lateinit var btManager: BluetoothManager
     private val BATTERY_SERVICE_UUID = UUID.fromString("0000180F-0000-1000-8000-00805F9B34FB")
     private val BATTERY_LEVEL_UUID = UUID.fromString("00002A19-0000-1000-8000-00805F9B34FB")
-    private val DEVICE_INFO_SERVICE_UUID = UUID.fromString("0000180A-0000-1000-8000-00805F9B34FB")
-    private val FIRMWARE_VERSION_UUID = UUID.fromString("00002A26-0000-1000-8000-00805F9B34FB")
     private val DISTANCE_SERVICE_UUID = UUID.fromString("12345678-1234-5678-1234-567812345678")
     private val DISTANCE_CHAR_UUID = UUID.fromString("12345678-1234-5678-1234-567812345679")
-    private val ANGLE_CHAR_UUID = UUID.fromString("12345678-1234-5678-1234-56781234567A")
     private val CLIENT_CHARACTERISTIC_CONFIG = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
     private val subscriptionRetries = mutableMapOf<String, Int>()
     private val connectionRetries = mutableMapOf<String, Int>()
@@ -249,8 +246,7 @@ class MainActivity : ComponentActivity() {
 
                                 val services = listOf(
                                     Pair(BATTERY_SERVICE_UUID, BATTERY_LEVEL_UUID),
-                                    Pair(DISTANCE_SERVICE_UUID, DISTANCE_CHAR_UUID),
-                                    Pair(DISTANCE_SERVICE_UUID, ANGLE_CHAR_UUID)
+                                    Pair(DISTANCE_SERVICE_UUID, DISTANCE_CHAR_UUID)
                                 )
                                 for ((serviceUuid, charUuid) in services) {
                                     val service = gatt.getService(serviceUuid)
@@ -290,25 +286,6 @@ class MainActivity : ComponentActivity() {
                                     } else {
                                         Log.e(TAG, "Service $serviceUuid not found on $address")
                                     }
-                                }
-                                // Read Firmware Version
-                                val deviceInfoService = gatt.getService(DEVICE_INFO_SERVICE_UUID)
-                                if (deviceInfoService != null) {
-                                    val firmwareChar = deviceInfoService.getCharacteristic(FIRMWARE_VERSION_UUID)
-                                    if (firmwareChar != null && (firmwareChar.properties and BluetoothGattCharacteristic.PROPERTY_READ) != 0) {
-                                        enqueueGattOperation {
-                                            if (gatt.readCharacteristic(firmwareChar)) {
-                                                Log.d(TAG, "Initiated read for firmware version on $address")
-                                            } else {
-                                                Log.e(TAG, "Failed to initiate read for firmware version on $address")
-                                            }
-                                            completeGattOperation()
-                                        }
-                                    } else {
-                                        Log.w(TAG, "Firmware characteristic not found or not readable on $address")
-                                    }
-                                } else {
-                                    Log.w(TAG, "Device Info service not found on $address")
                                 }
                             } else {
                                 Log.e(TAG, "Service discovery failed for $address, status=$status")
@@ -454,7 +431,6 @@ class MainActivity : ComponentActivity() {
                                 val value = characteristic.value?.let { bytes ->
                                     when (uuid) {
                                         BATTERY_LEVEL_UUID -> bytes[0].toInt().toString() + "%"
-                                        FIRMWARE_VERSION_UUID -> String(bytes)
                                         else -> String(bytes)
                                     }
                                 } ?: "Unknown"
@@ -465,7 +441,6 @@ class MainActivity : ComponentActivity() {
                                 val currentData = deviceData[address] ?: emptyMap()
                                 deviceData[address] = currentData + when (uuid) {
                                     BATTERY_LEVEL_UUID -> "Battery" to value
-                                    FIRMWARE_VERSION_UUID -> "Firmware" to value
                                     else -> uuid.toString() to value
                                 } + ("Latency" to latency)
                                 Log.d(TAG, "Read $uuid for $address: $value, Latency: $latency")
@@ -517,24 +492,6 @@ class MainActivity : ComponentActivity() {
                                         }
                                     } else {
                                         Log.e(TAG, "Insufficient bytes for distance: ${bytes.size}")
-                                    }
-                                }
-                                ANGLE_CHAR_UUID -> {
-                                    if (bytes.size >= 4) {
-                                        try {
-                                            val angleDegrees = ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.LITTLE_ENDIAN).float
-                                            if (angleDegrees.isFinite()) {
-                                                tagDataMap[address] = currentTagData.copy(angle = angleDegrees.toDouble())
-                                                deviceData[address] = (deviceData[address] ?: emptyMap()) + ("Angle" to String.format("%.1f deg", angleDegrees))
-                                                Log.d(TAG, "Angle notification for $address: $angleDegrees deg")
-                                            } else {
-                                                Log.w(TAG, "Invalid angle value: $angleDegrees")
-                                            }
-                                        } catch (e: Exception) {
-                                            Log.e(TAG, "Failed to parse angle for $address: ${e.message}")
-                                        }
-                                    } else {
-                                        Log.e(TAG, "Insufficient bytes for angle: ${bytes.size}")
                                     }
                                 }
                             }
