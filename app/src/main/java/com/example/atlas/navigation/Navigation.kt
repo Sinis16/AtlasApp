@@ -40,6 +40,8 @@ fun AppNavHost(
     lastReadRequestTimes: MutableMap<String, Long>,
     updateRate: MutableState<Long>,
     tagDataMap: SnapshotStateMap<String, TagData>,
+    leaveBehindDistance: MutableState<Long>,
+    isLeaveBehindEnabled: MutableState<Boolean>,
     onConnect: (String) -> Unit,
     onDisconnect: (String) -> Unit
 ) {
@@ -61,7 +63,9 @@ fun AppNavHost(
                 context = context,
                 lastReadRequestTimes = lastReadRequestTimes,
                 updateRate = updateRate,
-                tagDataMap = tagDataMap
+                tagDataMap = tagDataMap,
+                leaveBehindDistance = leaveBehindDistance,
+                isLeaveBehindEnabled = isLeaveBehindEnabled
             )
         }
         composable("connection") {
@@ -82,7 +86,9 @@ fun AppNavHost(
         composable("settings") {
             SettingsScreen(
                 navController = navController,
-                updateRate = updateRate
+                updateRate = updateRate,
+                leaveBehindDistance = leaveBehindDistance,
+                isLeaveBehindEnabled = isLeaveBehindEnabled
             )
         }
         composable(

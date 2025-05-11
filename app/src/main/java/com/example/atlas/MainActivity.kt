@@ -166,7 +166,6 @@ class MainActivity : ComponentActivity() {
                         enqueueGattOperation {
                             gatt.discoverServices()
                         }
-                        // Start reconnection cycle if no distance
                         if (!hasValidDistance(address, deviceData, tagDataMap)) {
                             startReconnectionCycle(address, gattConnections, connectionStates, deviceData, tagDataMap, this)
                         }
@@ -543,7 +542,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Class-level state variables to hold Compose state
     private lateinit var connectionStates: SnapshotStateMap<String, String>
     private lateinit var deviceData: SnapshotStateMap<String, Map<String, String>>
     private lateinit var tagDataMap: SnapshotStateMap<String, TagData>
@@ -570,7 +568,28 @@ class MainActivity : ComponentActivity() {
                 lastReadRequestTimes = remember { mutableMapOf<String, Long>() }
                 val updateRate = remember { mutableStateOf(500L) }
                 savedDeviceAddress = remember { mutableStateOf(getSharedPreferences("AtlasPrefs", Context.MODE_PRIVATE).getString("connectedDevice", null)) }
+                val leaveBehindDistance = remember {
+                    mutableStateOf(
+                        getSharedPreferences("AtlasPrefs", Context.MODE_PRIVATE)
+                            .getLong("leaveBehindDistance", 400L)
+                    )
+                }
+                val isLeaveBehindEnabled = remember {
+                    mutableStateOf(
+                        getSharedPreferences("AtlasPrefs", Context.MODE_PRIVATE)
+                            .getBoolean("isLeaveBehindEnabled", true)
+                    )
+                }
                 val context = LocalContext.current
+
+                // Save leaveBehindDistance and isLeaveBehindEnabled to SharedPreferences
+                LaunchedEffect(leaveBehindDistance.value, isLeaveBehindEnabled.value) {
+                    getSharedPreferences("AtlasPrefs", Context.MODE_PRIVATE)
+                        .edit()
+                        .putLong("leaveBehindDistance", leaveBehindDistance.value)
+                        .putBoolean("isLeaveBehindEnabled", isLeaveBehindEnabled.value)
+                        .apply()
+                }
 
                 val bleScanManager = remember {
                     BleScanManager(btManager, 5000, scanCallback = BleScanCallback({
@@ -660,6 +679,8 @@ class MainActivity : ComponentActivity() {
                             lastReadRequestTimes = lastReadRequestTimes,
                             updateRate = updateRate,
                             tagDataMap = tagDataMap,
+                            leaveBehindDistance = leaveBehindDistance,
+                            isLeaveBehindEnabled = isLeaveBehindEnabled,
                             onConnect = { address ->
                                 if (ActivityCompat.checkSelfPermission(
                                         this@MainActivity,

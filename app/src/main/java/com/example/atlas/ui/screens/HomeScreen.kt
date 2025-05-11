@@ -41,7 +41,9 @@ fun HomeScreen(
     context: Context,
     lastReadRequestTimes: MutableMap<String, Long>,
     updateRate: MutableState<Long>,
-    tagDataMap: SnapshotStateMap<String, TagData>
+    tagDataMap: SnapshotStateMap<String, TagData>,
+    leaveBehindDistance: MutableState<Long>,
+    isLeaveBehindEnabled: MutableState<Boolean>
 ) {
     var selectedDeviceAddress by remember { mutableStateOf<String?>(null) }
     var notificationDeviceAddress by remember { mutableStateOf<String?>(null) }
@@ -51,32 +53,33 @@ fun HomeScreen(
     val BATTERY_LEVEL_UUID = UUID.fromString("00002A19-0000-1000-8000-00805F9B34FB")
 
     // Monitor distances and manage notifications
-    LaunchedEffect(tagDataMap, connectionStates) {
+    LaunchedEffect(tagDataMap, connectionStates, leaveBehindDistance.value, isLeaveBehindEnabled.value) {
         while (true) {
             val connectedDevices = connectionStates.filter { it.value == "Connected" }.keys
             for (address in connectedDevices) {
                 val distance = tagDataMap[address]?.distance ?: 0.0
                 val currentStatus = notificationState[address] ?: NotificationStatus.None
+                val threshold = leaveBehindDistance.value.toDouble()
 
                 when {
-                    distance > 400.0 && currentStatus == NotificationStatus.None -> {
+                    distance > threshold && currentStatus == NotificationStatus.None -> {
                         notificationDeviceAddress = address
                         notificationState[address] = NotificationStatus.Shown
-                        Log.d(TAG, "Showing notification for $address: distance=$distance cm")
+                        Log.d(TAG, "Showing notification for $address: distance=$distance cm, threshold=$threshold cm")
                     }
-                    distance <= 400.0 && (currentStatus == NotificationStatus.Ignored || currentStatus == NotificationStatus.Shown) -> {
+                    distance <= threshold && (currentStatus == NotificationStatus.Ignored || currentStatus == NotificationStatus.Shown) -> {
                         notificationState[address] = NotificationStatus.None
                         if (notificationDeviceAddress == address) {
                             notificationDeviceAddress = null
                         }
-                        Log.d(TAG, "Reset notification state for $address: distance=$distance cm")
+                        Log.d(TAG, "Reset notification state for $address: distance=$distance cm, threshold=$threshold cm")
                     }
-                    distance > 400.0 && currentStatus is NotificationStatus.PendingRetrigger -> {
+                    distance > threshold && currentStatus is NotificationStatus.PendingRetrigger -> {
                         val pendingTime = currentStatus.timestamp
                         if (System.currentTimeMillis() - pendingTime >= 10_000) {
                             notificationDeviceAddress = address
                             notificationState[address] = NotificationStatus.Shown
-                            Log.d(TAG, "Re-triggering notification for $address: distance=$distance cm")
+                            Log.d(TAG, "Re-triggering notification for $address: distance=$distance cm, threshold=$threshold cm")
                         }
                     }
                 }
