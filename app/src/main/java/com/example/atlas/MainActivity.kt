@@ -53,6 +53,25 @@ class MainActivity : ComponentActivity() {
     private val CLIENT_CHARACTERISTIC_CONFIG = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
     private val subscriptionRetries = mutableMapOf<String, Int>()
     private val connectionRetries = mutableMapOf<String, Int>()
+    private val gattOperationQueue = mutableListOf<() -> Unit>()
+    private var isProcessingGattOperation = false
+
+    private fun enqueueGattOperation(operation: () -> Unit) {
+        gattOperationQueue.add(operation)
+        processNextGattOperation()
+    }
+
+    private fun processNextGattOperation() {
+        if (isProcessingGattOperation || gattOperationQueue.isEmpty()) return
+        isProcessingGattOperation = true
+        val operation = gattOperationQueue.removeAt(0)
+        operation()
+    }
+
+    private fun completeGattOperation() {
+        isProcessingGattOperation = false
+        processNextGattOperation()
+    }
 
     @RequiresApi(Build.VERSION_CODES.S)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -135,7 +154,9 @@ class MainActivity : ComponentActivity() {
                                         ) == PackageManager.PERMISSION_GRANTED
                                     ) {
                                         Log.d(TAG, "Requesting service discovery for $address")
-                                        gatt.discoverServices()
+                                        enqueueGattOperation {
+                                            gatt.discoverServices()
+                                        }
                                     } else {
                                         Log.w(TAG, "BLUETOOTH_CONNECT permission missing for $address")
                                     }
@@ -239,35 +260,29 @@ class MainActivity : ComponentActivity() {
                                         if (characteristic != null) {
                                             Log.d(TAG, "Characteristic $charUuid found, properties: ${characteristic.properties}")
                                             if ((characteristic.properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY) != 0) {
-                                                if (gatt.setCharacteristicNotification(characteristic, true)) {
-                                                    Log.d(TAG, "setCharacteristicNotification enabled for $charUuid on $address")
-                                                } else {
-                                                    Log.e(TAG, "Failed to enable setCharacteristicNotification for $charUuid on $address")
+                                                enqueueGattOperation {
+                                                    if (gatt.setCharacteristicNotification(characteristic, true)) {
+                                                        Log.d(TAG, "setCharacteristicNotification enabled for $charUuid on $address")
+                                                    } else {
+                                                        Log.e(TAG, "Failed to enable setCharacteristicNotification for $charUuid on $address")
+                                                    }
+                                                    completeGattOperation()
                                                 }
                                                 val descriptor = characteristic.getDescriptor(CLIENT_CHARACTERISTIC_CONFIG)
                                                 if (descriptor != null) {
                                                     descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                                                    // Retry descriptor write up to 3 times
-                                                    repeat(3) { attempt ->
-                                                        Handler(Looper.getMainLooper()).postDelayed({
-                                                            if (ActivityCompat.checkSelfPermission(
-                                                                    this@MainActivity,
-                                                                    Manifest.permission.BLUETOOTH_CONNECT
-                                                                ) == PackageManager.PERMISSION_GRANTED
-                                                            ) {
-                                                                if (gatt.writeDescriptor(descriptor)) {
-                                                                    Log.d(TAG, "Attempt ${attempt + 1}: Descriptor write initiated for $charUuid on $address")
-                                                                } else {
-                                                                    Log.e(TAG, "Attempt ${attempt + 1}: Failed to initiate descriptor write for $charUuid on $address")
-                                                                }
-                                                            }
-                                                        }, (100 * (attempt + 1)).toLong())
-                                                    }
+                                                    writeDescriptorWithRetry(gatt, descriptor, characteristic, charUuid, address, 0)
                                                 } else {
                                                     Log.e(TAG, "CCCD descriptor not found for $charUuid on $address")
+                                                    if ((characteristic.properties and BluetoothGattCharacteristic.PROPERTY_READ) != 0) {
+                                                        startPollingCharacteristic(gatt, characteristic, charUuid, address)
+                                                    }
                                                 }
                                             } else {
                                                 Log.w(TAG, "Characteristic $charUuid does not support notifications on $address, properties=${characteristic.properties}")
+                                                if ((characteristic.properties and BluetoothGattCharacteristic.PROPERTY_READ) != 0) {
+                                                    startPollingCharacteristic(gatt, characteristic, charUuid, address)
+                                                }
                                             }
                                         } else {
                                             Log.e(TAG, "Characteristic $charUuid not found in service $serviceUuid on $address")
@@ -281,10 +296,13 @@ class MainActivity : ComponentActivity() {
                                 if (deviceInfoService != null) {
                                     val firmwareChar = deviceInfoService.getCharacteristic(FIRMWARE_VERSION_UUID)
                                     if (firmwareChar != null && (firmwareChar.properties and BluetoothGattCharacteristic.PROPERTY_READ) != 0) {
-                                        if (gatt.readCharacteristic(firmwareChar)) {
-                                            Log.d(TAG, "Initiated read for firmware version on $address")
-                                        } else {
-                                            Log.e(TAG, "Failed to initiate read for firmware version on $address")
+                                        enqueueGattOperation {
+                                            if (gatt.readCharacteristic(firmwareChar)) {
+                                                Log.d(TAG, "Initiated read for firmware version on $address")
+                                            } else {
+                                                Log.e(TAG, "Failed to initiate read for firmware version on $address")
+                                            }
+                                            completeGattOperation()
                                         }
                                     } else {
                                         Log.w(TAG, "Firmware characteristic not found or not readable on $address")
@@ -294,7 +312,6 @@ class MainActivity : ComponentActivity() {
                                 }
                             } else {
                                 Log.e(TAG, "Service discovery failed for $address, status=$status")
-                                // Retry service discovery
                                 if (ActivityCompat.checkSelfPermission(
                                         this@MainActivity,
                                         Manifest.permission.BLUETOOTH_CONNECT
@@ -302,22 +319,95 @@ class MainActivity : ComponentActivity() {
                                 ) {
                                     Handler(Looper.getMainLooper()).postDelayed({
                                         Log.d(TAG, "Retrying service discovery for $address")
-                                        gatt.discoverServices()
+                                        enqueueGattOperation {
+                                            gatt.discoverServices()
+                                            completeGattOperation()
+                                        }
                                     }, 1000)
                                 }
                             }
                         }
 
+                        private fun writeDescriptorWithRetry(
+                            gatt: BluetoothGatt,
+                            descriptor: BluetoothGattDescriptor,
+                            characteristic: BluetoothGattCharacteristic,
+                            charUuid: UUID,
+                            address: String,
+                            attempt: Int
+                        ) {
+                            if (attempt >= 3) {
+                                Log.e(TAG, "Max retries reached for descriptor write for $charUuid on $address")
+                                if ((characteristic.properties and BluetoothGattCharacteristic.PROPERTY_READ) != 0) {
+                                    startPollingCharacteristic(gatt, characteristic, charUuid, address)
+                                }
+                                completeGattOperation()
+                                return
+                            }
+                            if (ActivityCompat.checkSelfPermission(
+                                    this@MainActivity,
+                                    Manifest.permission.BLUETOOTH_CONNECT
+                                ) == PackageManager.PERMISSION_GRANTED
+                            ) {
+                                enqueueGattOperation {
+                                    if (gatt.writeDescriptor(descriptor)) {
+                                        Log.d(TAG, "Attempt ${attempt + 1}: Descriptor write initiated for $charUuid on $address")
+                                    } else {
+                                        Log.e(TAG, "Attempt ${attempt + 1}: Failed to initiate descriptor write for $charUuid on $address")
+                                        Handler(Looper.getMainLooper()).postDelayed({
+                                            writeDescriptorWithRetry(gatt, descriptor, characteristic, charUuid, address, attempt + 1)
+                                        }, 500)
+                                        completeGattOperation()
+                                    }
+                                }
+                            } else {
+                                completeGattOperation()
+                            }
+                        }
+
+                        private fun startPollingCharacteristic(
+                            gatt: BluetoothGatt,
+                            characteristic: BluetoothGattCharacteristic,
+                            charUuid: UUID,
+                            address: String
+                        ) {
+                            Log.d(TAG, "Starting polling for $charUuid on $address")
+                            Handler(Looper.getMainLooper()).postDelayed(object : Runnable {
+                                override fun run() {
+                                    if (ActivityCompat.checkSelfPermission(
+                                            this@MainActivity,
+                                            Manifest.permission.BLUETOOTH_CONNECT
+                                        ) == PackageManager.PERMISSION_GRANTED
+                                    ) {
+                                        if (connectionStates[address] == "Connected") {
+                                            enqueueGattOperation {
+                                                if (gatt.readCharacteristic(characteristic)) {
+                                                    Log.d(TAG, "Polling read initiated for $charUuid on $address")
+                                                } else {
+                                                    Log.e(TAG, "Failed to initiate polling read for $charUuid on $address")
+                                                }
+                                                completeGattOperation()
+                                            }
+                                            Handler(Looper.getMainLooper()).postDelayed(this, 1000)
+                                        }
+                                    }
+                                }
+                            }, 1000)
+                        }
+
                         override fun onDescriptorWrite(gatt: BluetoothGatt?, descriptor: BluetoothGattDescriptor?, status: Int) {
                             val address = gatt?.device?.address ?: return
                             val uuid = descriptor?.uuid ?: return
-                            Log.d(TAG, "onDescriptorWrite for $uuid on $address, status=$status")
+                            val characteristic = descriptor.characteristic
+                            val charUuid = characteristic?.uuid ?: "unknown"
+                            Log.d(TAG, "onDescriptorWrite for $uuid (char: $charUuid) on $address, status=$status")
+                            completeGattOperation()
                             if (uuid == CLIENT_CHARACTERISTIC_CONFIG) {
                                 if (status == BluetoothGatt.GATT_SUCCESS) {
-                                    Log.d(TAG, "Successfully enabled notifications for characteristic on $address")
+                                    Log.d(TAG, "Successfully enabled notifications for characteristic $charUuid on $address")
                                     subscriptionRetries.remove(address)
                                 } else {
-                                    Log.e(TAG, "Failed to enable notifications for $address, status=$status")
+                                    Log.e(TAG, "Failed to enable notifications for $charUuid on $address, status=$status")
                                     val retries = subscriptionRetries.getOrDefault(address, 0) + 1
                                     if (retries < 3) {
                                         subscriptionRetries[address] = retries
@@ -326,41 +416,26 @@ class MainActivity : ComponentActivity() {
                                                 Manifest.permission.BLUETOOTH_CONNECT
                                             ) == PackageManager.PERMISSION_GRANTED
                                         ) {
-                                            gatt.services?.forEach { service ->
-                                                service.characteristics.forEach { char ->
-                                                    if ((char.properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY) != 0) {
-                                                        if (gatt.setCharacteristicNotification(char, true)) {
-                                                            Log.d(TAG, "Retry $retries: setCharacteristicNotification enabled for ${char.uuid} on $address")
+                                            val desc = characteristic.getDescriptor(CLIENT_CHARACTERISTIC_CONFIG)
+                                            if (desc != null) {
+                                                desc.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                                                Handler(Looper.getMainLooper()).postDelayed({
+                                                    enqueueGattOperation {
+                                                        if (gatt.writeDescriptor(desc)) {
+                                                            Log.d(TAG, "Retry $retries: Descriptor write initiated for $charUuid on $address")
                                                         } else {
-                                                            Log.e(TAG, "Retry $retries: Failed to enable setCharacteristicNotification for ${char.uuid} on $address")
+                                                            Log.e(TAG, "Retry $retries: Failed to initiate descriptor write for $charUuid on $address")
                                                         }
-                                                        val desc = char.getDescriptor(CLIENT_CHARACTERISTIC_CONFIG)
-                                                        if (desc != null) {
-                                                            desc.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                                                            Handler(Looper.getMainLooper()).postDelayed({
-                                                                if (gatt.writeDescriptor(desc)) {
-                                                                    Log.d(TAG, "Retry $retries: Descriptor write initiated for ${char.uuid} on $address")
-                                                                } else {
-                                                                    Log.e(TAG, "Retry $retries: Failed to initiate descriptor write for ${char.uuid} on $address")
-                                                                }
-                                                            }, 100)
-                                                        }
+                                                        completeGattOperation()
                                                     }
-                                                }
+                                                }, 500)
                                             }
                                         }
                                     } else {
-                                        Log.e(TAG, "Max retries reached for enabling notifications on $address")
-                                        // Retry service discovery as a fallback
-                                        if (ActivityCompat.checkSelfPermission(
-                                                this@MainActivity,
-                                                Manifest.permission.BLUETOOTH_CONNECT
-                                            ) == PackageManager.PERMISSION_GRANTED
-                                        ) {
-                                            Handler(Looper.getMainLooper()).postDelayed({
-                                                Log.d(TAG, "Retrying service discovery after max descriptor write retries for $address")
-                                                gatt.discoverServices()
-                                            }, 1000)
+                                        Log.e(TAG, "Max retries reached for enabling notifications for $charUuid on $address")
+                                        if ((characteristic.properties and BluetoothGattCharacteristic.PROPERTY_READ) != 0) {
+                                            startPollingCharacteristic(gatt, characteristic,
+                                                charUuid as UUID, address)
                                         }
                                     }
                                 }
@@ -372,6 +447,7 @@ class MainActivity : ComponentActivity() {
                             characteristic: BluetoothGattCharacteristic?,
                             status: Int
                         ) {
+                            completeGattOperation()
                             if (status == BluetoothGatt.GATT_SUCCESS) {
                                 val address = gatt?.device?.address ?: return
                                 val uuid = characteristic?.uuid ?: return
@@ -406,6 +482,7 @@ class MainActivity : ComponentActivity() {
                             gatt: BluetoothGatt?,
                             characteristic: BluetoothGattCharacteristic?
                         ) {
+                            completeGattOperation()
                             val address = gatt?.device?.address ?: return
                             val uuid = characteristic?.uuid ?: return
                             val bytes = characteristic.value ?: byteArrayOf()
@@ -464,6 +541,7 @@ class MainActivity : ComponentActivity() {
                         }
 
                         override fun onReadRemoteRssi(gatt: BluetoothGatt?, rssi: Int, status: Int) {
+                            completeGattOperation()
                             if (status == BluetoothGatt.GATT_SUCCESS) {
                                 val address = gatt?.device?.address ?: return
                                 val currentTime = System.currentTimeMillis()
