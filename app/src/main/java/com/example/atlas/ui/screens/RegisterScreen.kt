@@ -6,13 +6,18 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import kotlinx.coroutines.delay
 
 @Composable
 fun RegisterScreen(navController: NavController) {
+    var name by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
@@ -42,6 +47,17 @@ fun RegisterScreen(navController: NavController) {
         Text(text = "Register", style = MaterialTheme.typography.headlineMedium)
 
         Spacer(modifier = Modifier.height(16.dp))
+
+        OutlinedTextField(
+            value = name,
+            onValueChange = { name = it },
+            label = { Text("Name") },
+            modifier = Modifier.fillMaxWidth(),
+            isError = errorMessage != null && name.isBlank(),
+            singleLine = true
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
 
         OutlinedTextField(
             value = email,
@@ -101,7 +117,7 @@ fun RegisterScreen(navController: NavController) {
 
         Button(
             onClick = {
-                if (email.isBlank() || password.isBlank() || confirmPassword.isBlank()) {
+                if (name.isBlank() || email.isBlank() || password.isBlank() || confirmPassword.isBlank()) {
                     errorMessage = "Please fill in all fields"
                 } else if (password != confirmPassword) {
                     errorMessage = "Passwords do not match"
@@ -125,5 +141,13 @@ fun RegisterScreen(navController: NavController) {
                 Text("Submit")
             }
         }
+
+        Text(
+            text = "You do have an account? Log in!",
+            color = MaterialTheme.colorScheme.primary,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier
+                .clickable { navController.navigate("logIn") }
+        )
     }
 }
