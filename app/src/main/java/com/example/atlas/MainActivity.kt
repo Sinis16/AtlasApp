@@ -38,10 +38,25 @@ import com.example.atlas.ui.components.BottomNavBar
 import com.example.atlas.ui.components.TopNavBar
 import com.example.atlas.ui.theme.AtlasTheme
 import androidx.compose.ui.platform.LocalContext
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.example.atlas.data.repository.UserRepository
+import com.example.atlas.ui.viewmodel.UserViewModel
+import dagger.hilt.android.AndroidEntryPoint
+import io.github.jan.supabase.SupabaseClient
 import java.nio.ByteBuffer
 import java.util.UUID
+import javax.inject.Inject
 
+@AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    @Inject
+    lateinit var supabaseClient: SupabaseClient
+
+    @Inject
+    lateinit var userRepository: UserRepository
+
+
     private lateinit var permissionManager: PermissionManager
     private lateinit var btManager: BluetoothManager
     private val BATTERY_SERVICE_UUID = UUID.fromString("0000180F-0000-1000-8000-00805F9B34FB")
@@ -568,6 +583,9 @@ class MainActivity : ComponentActivity() {
                 lastReadRequestTimes = remember { mutableMapOf<String, Long>() }
                 val updateRate = remember { mutableStateOf(500L) }
                 savedDeviceAddress = remember { mutableStateOf(getSharedPreferences("AtlasPrefs", Context.MODE_PRIVATE).getString("connectedDevice", null)) }
+
+                val userViewModel: UserViewModel = hiltViewModel()
+
                 val leaveBehindDistance = remember {
                     mutableStateOf(
                         getSharedPreferences("AtlasPrefs", Context.MODE_PRIVATE)
@@ -688,7 +706,8 @@ class MainActivity : ComponentActivity() {
                             tagDataMap = tagDataMap,
                             leaveBehindDistance = leaveBehindDistance,
                             isLeaveBehindEnabled = isLeaveBehindEnabled,
-                            isAdvancedMode = isAdvancedMode, // Pass the new state
+                            isAdvancedMode = isAdvancedMode,
+                            userRepository = userRepository, // Pass the new state
                             onConnect = { address ->
                                 if (ActivityCompat.checkSelfPermission(
                                         this@MainActivity,

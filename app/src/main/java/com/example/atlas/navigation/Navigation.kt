@@ -7,6 +7,7 @@ import androidx.annotation.RequiresApi
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.snapshots.SnapshotStateMap
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -14,6 +15,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.example.atlas.blescanner.BleScanManager
 import com.example.atlas.blescanner.model.BleDevice
+import com.example.atlas.data.repository.UserRepository
 import com.example.atlas.models.TagData
 import com.example.atlas.permissions.PermissionManager
 import com.example.atlas.ui.screens.CardConnectionScreen
@@ -42,7 +44,8 @@ fun AppNavHost(
     tagDataMap: SnapshotStateMap<String, TagData>,
     leaveBehindDistance: MutableState<Long>,
     isLeaveBehindEnabled: MutableState<Boolean>,
-    isAdvancedMode: MutableState<Boolean>, // Added isAdvancedMode parameter
+    isAdvancedMode: MutableState<Boolean>,
+    userRepository: UserRepository,// Added isAdvancedMode parameter
     onConnect: (String) -> Unit,
     onDisconnect: (String) -> Unit
 ) {
