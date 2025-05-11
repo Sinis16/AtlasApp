@@ -42,6 +42,7 @@ fun AppNavHost(
     tagDataMap: SnapshotStateMap<String, TagData>,
     leaveBehindDistance: MutableState<Long>,
     isLeaveBehindEnabled: MutableState<Boolean>,
+    isAdvancedMode: MutableState<Boolean>, // Added isAdvancedMode parameter
     onConnect: (String) -> Unit,
     onDisconnect: (String) -> Unit
 ) {
@@ -65,7 +66,8 @@ fun AppNavHost(
                 updateRate = updateRate,
                 tagDataMap = tagDataMap,
                 leaveBehindDistance = leaveBehindDistance,
-                isLeaveBehindEnabled = isLeaveBehindEnabled
+                isLeaveBehindEnabled = isLeaveBehindEnabled,
+                isAdvancedMode = isAdvancedMode // Pass isAdvancedMode
             )
         }
         composable("connection") {
@@ -88,7 +90,8 @@ fun AppNavHost(
                 navController = navController,
                 updateRate = updateRate,
                 leaveBehindDistance = leaveBehindDistance,
-                isLeaveBehindEnabled = isLeaveBehindEnabled
+                isLeaveBehindEnabled = isLeaveBehindEnabled,
+                isAdvancedMode = isAdvancedMode // Pass isAdvancedMode
             )
         }
         composable(

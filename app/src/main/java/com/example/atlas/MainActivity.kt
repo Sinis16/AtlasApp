@@ -532,7 +532,7 @@ class MainActivity : ComponentActivity() {
                 val address = gatt?.device?.address ?: return
                 val currentTime = System.currentTimeMillis()
                 val requestTime = lastReadRequestTimes[address] ?: currentTime
-                val latency = (currentTime - requestTime).toString() + " ms"
+                var latency = (currentTime - requestTime).toString() + " ms"
                 val currentData = deviceData[address] ?: emptyMap()
                 deviceData[address] = currentData + ("RSSI" to "$rssi dBm") + ("Latency" to latency)
                 Log.d(TAG, "RSSI for $address: $rssi dBm, Latency: $latency")
@@ -580,14 +580,21 @@ class MainActivity : ComponentActivity() {
                             .getBoolean("isLeaveBehindEnabled", true)
                     )
                 }
+                val isAdvancedMode = remember {
+                    mutableStateOf(
+                        getSharedPreferences("AtlasPrefs", Context.MODE_PRIVATE)
+                            .getBoolean("isAdvancedMode", false)
+                    )
+                }
                 val context = LocalContext.current
 
-                // Save leaveBehindDistance and isLeaveBehindEnabled to SharedPreferences
-                LaunchedEffect(leaveBehindDistance.value, isLeaveBehindEnabled.value) {
+                // Save leaveBehindDistance, isLeaveBehindEnabled, and isAdvancedMode to SharedPreferences
+                LaunchedEffect(leaveBehindDistance.value, isLeaveBehindEnabled.value, isAdvancedMode.value) {
                     getSharedPreferences("AtlasPrefs", Context.MODE_PRIVATE)
                         .edit()
                         .putLong("leaveBehindDistance", leaveBehindDistance.value)
                         .putBoolean("isLeaveBehindEnabled", isLeaveBehindEnabled.value)
+                        .putBoolean("isAdvancedMode", isAdvancedMode.value)
                         .apply()
                 }
 
@@ -606,8 +613,8 @@ class MainActivity : ComponentActivity() {
                             this@MainActivity,
                             Manifest.permission.BLUETOOTH_CONNECT
                         ) == PackageManager.PERMISSION_GRANTED
-                        val name: String? = if (hasScanPermission && hasConnectPermission) it.device?.name else null
-                        val rssi: Int? = if (hasScanPermission && hasConnectPermission) it.rssi else null
+                        val name: String? = if (hasScanPermission && hasConnectPermission) it?.device?.name else null
+                        val rssi: Int? = if (hasScanPermission && hasConnectPermission) it?.rssi else null
                         val existingDeviceIndex = foundDevices.indexOfFirst { it.address == address }
                         if (existingDeviceIndex == -1) {
                             val device = BleDevice(address, name, rssi)
@@ -681,6 +688,7 @@ class MainActivity : ComponentActivity() {
                             tagDataMap = tagDataMap,
                             leaveBehindDistance = leaveBehindDistance,
                             isLeaveBehindEnabled = isLeaveBehindEnabled,
+                            isAdvancedMode = isAdvancedMode, // Pass the new state
                             onConnect = { address ->
                                 if (ActivityCompat.checkSelfPermission(
                                         this@MainActivity,

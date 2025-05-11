@@ -43,7 +43,8 @@ fun HomeScreen(
     updateRate: MutableState<Long>,
     tagDataMap: SnapshotStateMap<String, TagData>,
     leaveBehindDistance: MutableState<Long>,
-    isLeaveBehindEnabled: MutableState<Boolean>
+    isLeaveBehindEnabled: MutableState<Boolean>,
+    isAdvancedMode: MutableState<Boolean> // New parameter for advanced mode
 ) {
     var selectedDeviceAddress by remember { mutableStateOf<String?>(null) }
     var notificationDeviceAddress by remember { mutableStateOf<String?>(null) }
@@ -196,16 +197,35 @@ fun HomeScreen(
             var tagId: String? = null
             val details = mutableListOf<String>()
             data.entries.forEach { (key, value) ->
-                details.add("$key: $value")
+                when (key) {
+                    "Battery" -> details.add("Battery: $value")
+                    "Distance" -> details.add("Distance: $value")
+                    "RSSI" -> {
+                        val rssiValue = value.removeSuffix(" dBm").toIntOrNull() ?: 0
+                        val connectivity = if (rssiValue >= -70) "Strong" else "Weak"
+                        val displayValue = if (isAdvancedMode.value) "$connectivity ($value)" else connectivity
+                        details.add("BLE Connectivity: $displayValue")
+                    }
+                    "Latency" -> {
+                        val latencyValue = value.removeSuffix(" ms").toLongOrNull() ?: 0
+                        val speed = if (latencyValue <= 100) "Fast" else "Normal"
+                        val displayValue = if (isAdvancedMode.value) "$speed ($value)" else speed
+                        details.add("Speed: $displayValue")
+                    }
+                }
             }
             tagData?.let {
                 Log.d(TAG, "Details for $address: id=${it.id}, distance=${it.distance}, battery=${it.battery}")
-                details.add("Tag ID: ${it.id}")
                 tagId = it.id
+                if (isAdvancedMode.value) {
+                    details.add("Tag ID: ${it.id}")
+                }
             } ?: run {
                 Log.w(TAG, "No tagData for $address")
-                details.add("Tag ID: $address")
                 tagId = address
+                if (isAdvancedMode.value) {
+                    details.add("Tag ID: $address")
+                }
             }
 
             Row(

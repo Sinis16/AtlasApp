@@ -18,7 +18,8 @@ fun SettingsScreen(
     navController: NavHostController,
     updateRate: MutableState<Long>,
     leaveBehindDistance: MutableState<Long>,
-    isLeaveBehindEnabled: MutableState<Boolean>
+    isLeaveBehindEnabled: MutableState<Boolean>,
+    isAdvancedMode: MutableState<Boolean> // New parameter for advanced mode
 ) {
     Column(
         modifier = Modifier
@@ -40,6 +41,7 @@ fun SettingsScreen(
             item {
                 UpdateRateSetting(updateRate)
                 LeaveBehindDistanceSetting(leaveBehindDistance, isLeaveBehindEnabled)
+                AdvancedModeSetting(isAdvancedMode)
             }
         }
     }
@@ -168,6 +170,32 @@ fun LeaveBehindDistanceSetting(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun AdvancedModeSetting(isAdvancedMode: MutableState<Boolean>) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp)
+            .background(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(8.dp)
+            )
+            .padding(16.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(text = "Advanced Mode", fontSize = 16.sp)
+            Switch(
+                checked = isAdvancedMode.value,
+                onCheckedChange = { isAdvancedMode.value = it }
+            )
         }
     }
 }
