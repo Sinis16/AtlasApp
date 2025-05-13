@@ -150,63 +150,51 @@ fun HomeScreen(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
-            text = "Connected Devices",
+            text = "Connected Receivers",
             style = MaterialTheme.typography.headlineSmall,
             modifier = Modifier.padding(bottom = 8.dp)
         )
 
-        val connectedDevices = connectionStates.filter { it.value == "Connected" }.keys.toList()
-        if (connectedDevices.isEmpty()) {
+        val rxDevices = connectionStates.entries.filter { (address: String, state: String) ->
+            state == "Connected" && deviceData[address]?.get("DeviceID")?.startsWith("UWB_TX_") != true
+        }.map { it.key }
+        if (rxDevices.isEmpty()) {
             Text(
-                text = "No devices connected",
+                text = "No receivers connected",
                 fontSize = 16.sp,
                 modifier = Modifier.padding(top = 16.dp)
             )
         } else {
-            Log.d(TAG, "Displaying ${connectedDevices.size} connected devices: $connectedDevices")
+            Log.d(TAG, "Displaying ${rxDevices.size} RX devices: $rxDevices")
             LazyColumn(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
             ) {
-                items(connectedDevices) { address ->
+                items(rxDevices) { address ->
                     val device = foundDevices.find { it.address == address }
                     val deviceId = deviceData[address]?.get("DeviceID")
-                    val isTx = deviceId?.startsWith("UWB_TX_") == true
-                    val name = device?.name ?: deviceId ?: "Unknown Device"
-                    val displayName = if (isTx) "$name (TX)" else "$name (RX)"
-                    val distance = if (isTx) deviceData[address]?.get("Distance") else null
-                    val displayDistance = when {
-                        !isTx -> ""
-                        distance == null || tagDataMap[address]?.distance == 0.0 -> {
-                            Log.w(TAG, "No distance available for TX $address: deviceData=${deviceData[address]}, tagData=${tagDataMap[address]?.distance}")
-                            if (isAdvancedMode.value) "No distance received" else "loading..."
-                        }
-                        else -> distance
-                    }
+                    val name = device?.name ?: deviceId ?: "Unknown Receiver"
+                    val displayName = "$name (RX)"
 
-                    val distanceValue = if (isTx) tagDataMap[address]?.distance ?: 0.0 else 0.0
-                    val fraction = (distanceValue / 700.0).coerceIn(0.0, 1.0).toFloat()
-                    val greyishRed = Color(0xFF7A1515)
                     val greyishBlue = Color(0xFF2C2C62)
-                    val interpolatedColor = lerp(greyishRed, greyishBlue, fraction)
+                    val isSelected = selectedDeviceAddress == address
 
-                    Log.d(TAG, "Rendering device $address: name=$displayName, isTx=$isTx, distance=$displayDistance")
-                    Box(
+                    Log.d(TAG, "Rendering RX device $address: name=$displayName")
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 8.dp)
                             .background(
-                                color = if (selectedDeviceAddress == address) {
+                                color = if (isSelected) {
                                     MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
                                 } else {
-                                    interpolatedColor
+                                    greyishBlue
                                 },
                                 shape = RoundedCornerShape(8.dp)
                             )
                             .clickable {
-                                selectedDeviceAddress =
-                                    if (selectedDeviceAddress == address) null else address
+                                selectedDeviceAddress = if (isSelected) null else address
                             }
                             .padding(16.dp)
                     ) {
@@ -215,101 +203,198 @@ fun HomeScreen(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text(text = displayName, fontSize = 16.sp)
-                            Text(text = displayDistance, fontSize = 16.sp)
                         }
-                    }
-                }
-            }
-        }
 
-        selectedDeviceAddress?.let { address ->
-            val device = foundDevices.find { it.address == address }
-            val deviceId = deviceData[address]?.get("DeviceID")
-            val isTx = deviceId?.startsWith("UWB_TX_") == true
-            val name = device?.name ?: deviceId ?: "Unknown Device"
-            val displayName = if (isTx) "$name (TX)" else "$name (RX)"
-            val data = deviceData[address] ?: emptyMap()
-            val tagData = tagDataMap[address]
-
-            Text(
-                text = "Details for $displayName",
-                style = MaterialTheme.typography.headlineSmall,
-                modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
-            )
-
-            var tagId: String? = null
-            val details = mutableListOf<String>()
-            data.entries.forEach { (key, value) ->
-                when (key) {
-                    "Battery" -> details.add("Battery: $value")
-                    "Distance" -> if (isTx) details.add("Distance: $value")
-                    "DeviceID" -> if (isAdvancedMode.value) details.add("Device ID: $value")
-                    "ReceivedTxId" -> if (isAdvancedMode.value && !isTx) details.add("Received TX ID: $value")
-                    "RSSI" -> {
-                        val rssiValue = value.removeSuffix(" dBm").toIntOrNull() ?: 0
-                        val connectivity = if (rssiValue >= -70) "Strong" else "Weak"
-                        val displayValue = if (isAdvancedMode.value) "$connectivity ($value)" else connectivity
-                        details.add("BLE Connectivity: $displayValue")
-                    }
-                    "Latency" -> {
-                        val latencyValue = value.removeSuffix(" ms").toLongOrNull() ?: 0
-                        val speed = if (latencyValue <= 100) "Fast" else "Normal"
-                        val displayValue = if (isAdvancedMode.value) "$speed ($value)" else speed
-                        details.add("Speed: $displayValue")
-                    }
-                }
-            }
-            tagData?.let {
-                Log.d(TAG, "Details for $address: id=${it.id}, distance=${it.distance}, battery=${it.battery}")
-                tagId = it.id
-                if (isAdvancedMode.value) {
-                    details.add("Tag ID: ${it.id}")
-                }
-            } ?: run {
-                Log.w(TAG, "No tagData for $address")
-                tagId = address
-                if (isAdvancedMode.value) {
-                    details.add("Tag ID: $address")
-                }
-            }
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 200.dp),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                LazyColumn(
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(end = 8.dp)
-                ) {
-                    items(details) { detail ->
-                        Text(
-                            text = detail,
-                            fontSize = 14.sp,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp)
-                        )
-                    }
-                }
-                Column(
-                    modifier = Modifier
-                        .wrapContentWidth()
-                        .fillMaxHeight(),
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Button(
-                        onClick = {
-                            tagId?.let { id ->
-                                navController.navigate("tag/$id")
-                                Log.d(TAG, "Navigating to TagScreen for tagId: $id")
+                        if (isSelected) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            // RX Details
+                            val data = deviceData[address] ?: emptyMap()
+                            val tagData = tagDataMap[address]
+                            var tagId: String? = null
+                            val details = mutableListOf<String>()
+                            data.entries.forEach { (key, value) ->
+                                when (key) {
+                                    "Battery" -> details.add("Battery: $value")
+                                    "DeviceID" -> if (isAdvancedMode.value) details.add("Device ID: $value")
+                                    "ReceivedTxId" -> if (isAdvancedMode.value) details.add("Received TX ID: $value")
+                                    "RSSI" -> {
+                                        val rssiValue = value.removeSuffix(" dBm").toIntOrNull() ?: 0
+                                        val connectivity = if (rssiValue >= -70) "Strong" else "Weak"
+                                        val displayValue = if (isAdvancedMode.value) "$connectivity ($value)" else connectivity
+                                        details.add("BLE Connectivity: $displayValue")
+                                    }
+                                    "Latency" -> {
+                                        val latencyValue = value.removeSuffix(" ms").toLongOrNull() ?: 0
+                                        val speed = if (latencyValue <= 100) "Fast" else "Normal"
+                                        val displayValue = if (isAdvancedMode.value) "$speed ($value)" else speed
+                                        details.add("Speed: $displayValue")
+                                    }
+                                }
                             }
-                        },
-                        modifier = Modifier.padding(start = 8.dp)
-                    ) {
-                        Text("Buscar")
+                            tagData?.let {
+                                Log.d(TAG, "Details for RX $address: id=${it.id}, battery=${it.battery}")
+                                tagId = it.id
+                                if (isAdvancedMode.value) {
+                                    details.add("Tag ID: ${it.id}")
+                                }
+                            } ?: run {
+                                Log.w(TAG, "No tagData for RX $address")
+                                tagId = address
+                                if (isAdvancedMode.value) {
+                                    details.add("Tag ID: $address")
+                                }
+                            }
+
+                            LazyColumn(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 120.dp)
+                            ) {
+                                items(details) { detail ->
+                                    Text(
+                                        text = detail,
+                                        fontSize = 14.sp,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 2.dp)
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Related Transmitters",
+                                style = MaterialTheme.typography.titleLarge,
+                                modifier = Modifier.padding(bottom = 4.dp)
+                            )
+
+                            // Find related TX devices
+                            val receivedTxId = deviceData[address]?.get("ReceivedTxId")
+                            val txDevices = if (receivedTxId != null) {
+                                connectionStates.entries.filter { (txAddress: String, state: String) ->
+                                    state == "Connected" && deviceData[txAddress]?.get("DeviceID") == "UWB_TX_$receivedTxId"
+                                }.map { it.key }
+                            } else {
+                                emptyList()
+                            }
+
+                            if (txDevices.isEmpty()) {
+                                Text(
+                                    text = "No related transmitters found",
+                                    fontSize = 14.sp,
+                                    modifier = Modifier.padding(vertical = 4.dp)
+                                )
+                            } else {
+                                Log.d(TAG, "Found ${txDevices.size} related TX devices for RX $address: $txDevices")
+                                LazyColumn(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(max = 200.dp)
+                                ) {
+                                    items(txDevices) { txAddress ->
+                                        val txDevice = foundDevices.find { it.address == txAddress }
+                                        val txDeviceId = deviceData[txAddress]?.get("DeviceID")
+                                        val txName = txDevice?.name ?: txDeviceId ?: "Unknown Transmitter"
+                                        val displayTxName = "$txName (TX)"
+                                        val distance = deviceData[txAddress]?.get("Distance") ?: "No distance"
+                                        val distanceValue = tagDataMap[txAddress]?.distance ?: 0.0
+                                        val fraction = (distanceValue / 700.0).coerceIn(0.0, 1.0).toFloat()
+                                        val greyishRed = Color(0xFF7A1515)
+                                        val greyishBlue = Color(0xFF2C2C62)
+                                        val interpolatedColor = lerp(greyishRed, greyishBlue, fraction)
+
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 4.dp)
+                                                .background(
+                                                    color = interpolatedColor,
+                                                    shape = RoundedCornerShape(4.dp)
+                                                )
+                                                .padding(8.dp)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween
+                                            ) {
+                                                Text(text = displayTxName, fontSize = 14.sp)
+                                                Text(text = distance, fontSize = 14.sp)
+                                            }
+                                        }
+
+                                        // TX Details
+                                        val txData = deviceData[txAddress] ?: emptyMap()
+                                        val txTagData = tagDataMap[txAddress]
+                                        val txDetails = mutableListOf<String>()
+                                        var txTagId: String? = null
+                                        txData.entries.forEach { (key, value) ->
+                                            when (key) {
+                                                "Battery" -> txDetails.add("Battery: $value")
+                                                "Distance" -> txDetails.add("Distance: $value")
+                                                "DeviceID" -> if (isAdvancedMode.value) txDetails.add("Device ID: $value")
+                                                "RSSI" -> {
+                                                    val rssiValue = value.removeSuffix(" dBm").toIntOrNull() ?: 0
+                                                    val connectivity = if (rssiValue >= -70) "Strong" else "Weak"
+                                                    val displayValue = if (isAdvancedMode.value) "$connectivity ($value)" else connectivity
+                                                    txDetails.add("BLE Connectivity: $displayValue")
+                                                }
+                                                "Latency" -> {
+                                                    val latencyValue = value.removeSuffix(" ms").toLongOrNull() ?: 0
+                                                    val speed = if (latencyValue <= 100) "Fast" else "Normal"
+                                                    val displayValue = if (isAdvancedMode.value) "$speed ($value)" else speed
+                                                    txDetails.add("Speed: $displayValue")
+                                                }
+                                            }
+                                        }
+                                        txTagData?.let {
+                                            Log.d(TAG, "Details for TX $txAddress: id=${it.id}, distance=${it.distance}, battery=${it.battery}")
+                                            txTagId = it.id
+                                            if (isAdvancedMode.value) {
+                                                txDetails.add("Tag ID: ${it.id}")
+                                            }
+                                        } ?: run {
+                                            Log.w(TAG, "No tagData for TX $txAddress")
+                                            txTagId = txAddress
+                                            if (isAdvancedMode.value) {
+                                                txDetails.add("Tag ID: $txAddress")
+                                            }
+                                        }
+
+                                        LazyColumn(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(start = 16.dp)
+                                                .heightIn(max = 100.dp)
+                                        ) {
+                                            items(txDetails) { detail ->
+                                                Text(
+                                                    text = detail,
+                                                    fontSize = 12.sp,
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .padding(vertical = 2.dp)
+                                                )
+                                            }
+                                        }
+
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Button(
+                                            onClick = {
+                                                txTagId?.let { id ->
+                                                    navController.navigate("tag/$id")
+                                                    Log.d(TAG, "Navigating to TagScreen for TX tagId: $id")
+                                                }
+                                            },
+                                            modifier = Modifier
+                                                .align(Alignment.End)
+                                                .padding(end = 8.dp)
+                                        ) {
+                                            Text("Buscar")
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
