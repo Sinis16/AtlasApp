@@ -47,8 +47,6 @@ import java.nio.ByteBuffer
 import java.util.UUID
 import javax.inject.Inject
 
-private const val TAG = "MainActivity"
-
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
@@ -72,10 +70,11 @@ class MainActivity : ComponentActivity() {
     private var isProcessingGattOperation = false
     private val isReconnectingForDistance = mutableMapOf<String, Boolean>()
     private val reconnectAttempts = mutableMapOf<String, Int>()
-    private val deviceIdToAddress = mutableMapOf<String, String>() // Maps TX ID (e.g., "ABCD") to TX device address
-    private val rxToTxId = mutableMapOf<String, String>() // Maps RX address to received TX ID
+    private val deviceIdToAddress = mutableMapOf<String, String>()
+    private val rxToTxId = mutableMapOf<String, String>()
 
     private fun enqueueGattOperation(operation: () -> Unit) {
+        Log.d(TAG, "Enqueuing GATT operation, queue size: ${gattOperationQueue.size}")
         gattOperationQueue.add(operation)
         processNextGattOperation()
     }
@@ -216,8 +215,8 @@ class MainActivity : ComponentActivity() {
                     }
                     if (status == 133 || status == 147) {
                         val retries = connectionRetries.getOrDefault(address, 0) + 1
-                        if (retries < 3) {
-                            Log.d(TAG, "Connection error (status=$status) for $address, retrying ($retries/3)")
+                        if (retries < 5) { // Increased from 3 to 5
+                            Log.d(TAG, "Connection error (status=$status) for $address, retrying ($retries/5)")
                             connectionRetries[address] = retries
                             Handler(Looper.getMainLooper()).postDelayed({
                                 if (ActivityCompat.checkSelfPermission(
@@ -287,11 +286,9 @@ class MainActivity : ComponentActivity() {
                     return
                 }
 
-                // Define constants for dynamic service UUID matching
                 val expectedPrefix = "12345678-1234-5678-1234-"
                 val expectedSuffix = "12345678"
 
-                // Log all services and characteristics
                 gatt.services?.forEach { service ->
                     val serviceUuid = service.uuid.toString()
                     Log.d(TAG, "Service found: $serviceUuid")
@@ -299,7 +296,6 @@ class MainActivity : ComponentActivity() {
                         Log.d(TAG, "  Characteristic: ${char.uuid}, Properties: ${char.properties}")
                     }
 
-                    // Battery Service
                     if (service.uuid == BATTERY_SERVICE_UUID) {
                         val characteristic = service.getCharacteristic(BATTERY_LEVEL_UUID)
                         if (characteristic != null) {
@@ -331,7 +327,6 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    // Device ID Service (TX)
                     if (service.uuid == DEVICE_SERVICE_UUID) {
                         val characteristic = service.getCharacteristic(DEVICE_ID_CHAR_UUID)
                         if (characteristic != null) {
@@ -366,12 +361,11 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    // Dynamic Distance Service (RX)
                     val serviceUuidStr = service.uuid.toString().lowercase()
                     if (serviceUuidStr.startsWith(expectedPrefix) && serviceUuidStr.endsWith(expectedSuffix)) {
-                        val txId = serviceUuidStr.substring(24, 28).uppercase() // e.g., "ABCD"
+                        val txId = serviceUuidStr.substring(24, 28).uppercase()
                         Log.d(TAG, "Dynamic Distance Service found: $serviceUuidStr, TX ID $txId on $address")
-                        rxToTxId[address] = txId // Store TX ID for RX
+                        rxToTxId[address] = txId
                         val currentData = deviceData[address] ?: emptyMap<String, String>()
                         deviceData[address] = currentData + mapOf("ReceivedTxId" to txId)
                         Log.d(TAG, "Updated deviceData for $address: ReceivedTxId=$txId")
@@ -393,7 +387,7 @@ class MainActivity : ComponentActivity() {
                                 val descriptor = characteristic.getDescriptor(CLIENT_CHARACTERISTIC_CONFIG)
                                 if (descriptor != null) {
                                     descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                                    Log.d(TAG, "Writing CCCD descriptor for $DISTANCE_CHAR_UUID (TX ID $txId) on $address")
+                                    Log.d(TAG, "Attempting CCCD descriptor write for $DISTANCE_CHAR_UUID (TX ID $txId) on $address")
                                     writeDescriptorWithRetry(gatt, descriptor, characteristic, DISTANCE_CHAR_UUID, address, 0, txId)
                                 } else {
                                     Log.e(TAG, "CCCD descriptor not found for $DISTANCE_CHAR_UUID (TX ID $txId) on $address")
@@ -488,6 +482,7 @@ class MainActivity : ComponentActivity() {
                     ) {
                         if (connectionStates[address] == "Connected") {
                             enqueueGattOperation {
+                                lastReadRequestTimes[address] = System.currentTimeMillis()
                                 if (gatt.readCharacteristic(characteristic)) {
                                     Log.d(TAG, "Polling read initiated for $charUuid on $address${txId?.let { " (TX ID $it)" } ?: ""}")
                                 } else {
@@ -495,11 +490,11 @@ class MainActivity : ComponentActivity() {
                                 }
                                 completeGattOperation()
                             }
-                            Handler(Looper.getMainLooper()).postDelayed(this, 1000)
+                            Handler(Looper.getMainLooper()).postDelayed(this, 1500) // Increased from 1000ms
                         }
                     }
                 }
-            }, 1000)
+            }, 1500)
         }
 
         override fun onDescriptorWrite(gatt: BluetoothGatt?, descriptor: BluetoothGattDescriptor?, status: Int) {
@@ -560,7 +555,7 @@ class MainActivity : ComponentActivity() {
                 val value = characteristic.value?.let { bytes ->
                     when (uuid) {
                         BATTERY_LEVEL_UUID -> bytes[0].toInt().toString() + "%"
-                        DEVICE_ID_CHAR_UUID -> String(bytes) // e.g., "UWB_TX_ABCD"
+                        DEVICE_ID_CHAR_UUID -> String(bytes)
                         DISTANCE_CHAR_UUID -> {
                             if (bytes.size >= 4) {
                                 try {
@@ -590,7 +585,7 @@ class MainActivity : ComponentActivity() {
                 val newData: Map<String, String> = when (uuid) {
                     BATTERY_LEVEL_UUID -> mapOf("Battery" to value)
                     DEVICE_ID_CHAR_UUID -> {
-                        val txId = value.removePrefix("UWB_TX_").uppercase() // e.g., "ABCD"
+                        val txId = value.removePrefix("UWB_TX_").uppercase()
                         if (txId.length == 4) {
                             deviceIdToAddress[txId] = address
                             Log.d(TAG, "Mapped TX ID $txId to TX address $address")
@@ -610,7 +605,7 @@ class MainActivity : ComponentActivity() {
                                 val txTagData = tagDataMap[txAddress] ?: TagData(txAddress, 0.0, 0.0, 0)
                                 tagDataMap[txAddress] = txTagData.copy(distance = distanceCm)
                                 Log.d(TAG, "Read distance $value for TX $txAddress (from RX $address, TX ID $txId)")
-                                mapOf() // Return empty map as we've updated txAddress directly
+                                mapOf()
                             } else {
                                 Log.w(TAG, "No TX address for TX ID $txId, storing distance $value under RX $address")
                                 mapOf("Distance" to value)
@@ -657,8 +652,8 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 DEVICE_ID_CHAR_UUID -> {
-                    val deviceId = String(bytes) // e.g., "UWB_TX_ABCD"
-                    val txId = deviceId.removePrefix("UWB_TX_").uppercase() // e.g., "ABCD"
+                    val deviceId = String(bytes)
+                    val txId = deviceId.removePrefix("UWB_TX_").uppercase()
                     if (txId.length == 4) {
                         deviceIdToAddress[txId] = address
                         Log.d(TAG, "Device ID notification for $address: $deviceId, mapped TX ID $txId to $address")
@@ -677,9 +672,9 @@ class MainActivity : ComponentActivity() {
                                     svc.getCharacteristic(DISTANCE_CHAR_UUID) == characteristic
                                 }?.uuid?.toString() ?: ""
                                 val txId = if (serviceUuid.lowercase().startsWith("12345678-1234-5678-1234-") && serviceUuid.lowercase().endsWith("12345678")) {
-                                    serviceUuid.substring(24, 28).uppercase() // e.g., "ABCD"
+                                    serviceUuid.substring(24, 28).uppercase()
                                 } else {
-                                    rxToTxId[address] // Fallback to stored TX ID
+                                    rxToTxId[address]
                                 }
                                 Log.d(TAG, "Distance notification on $address, service UUID $serviceUuid, TX ID $txId")
                                 if (txId != null) {
@@ -755,7 +750,7 @@ class MainActivity : ComponentActivity() {
                 tagDataMap = remember { mutableStateMapOf<String, TagData>() }
                 connectionStartTimes = remember { mutableMapOf<String, Long>() }
                 lastReadRequestTimes = remember { mutableMapOf<String, Long>() }
-                val updateRate = remember { mutableStateOf(500L) }
+                val updateRate = remember { mutableStateOf(1000L) } // Increased from 500ms
                 savedDeviceAddress = remember { mutableStateOf(getSharedPreferences("AtlasPrefs", Context.MODE_PRIVATE).getString("connectedDevice", null)) }
 
                 val userViewModel: UserViewModel = hiltViewModel()
