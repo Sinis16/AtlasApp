@@ -47,6 +47,8 @@ import java.nio.ByteBuffer
 import java.util.UUID
 import javax.inject.Inject
 
+private const val TAG = "MainActivity"
+
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
@@ -56,13 +58,13 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var userRepository: UserRepository
 
-
     private lateinit var permissionManager: PermissionManager
     private lateinit var btManager: BluetoothManager
     private val BATTERY_SERVICE_UUID = UUID.fromString("0000180F-0000-1000-8000-00805F9B34FB")
     private val BATTERY_LEVEL_UUID = UUID.fromString("00002A19-0000-1000-8000-00805F9B34FB")
-    private val DISTANCE_SERVICE_UUID = UUID.fromString("12345678-1234-5678-1234-567812345678")
     private val DISTANCE_CHAR_UUID = UUID.fromString("12345678-1234-5678-1234-567812345679")
+    private val DEVICE_SERVICE_UUID = UUID.fromString("87654321-4321-6789-4321-678987654321")
+    private val DEVICE_ID_CHAR_UUID = UUID.fromString("87654321-4321-6789-4321-678987654322")
     private val CLIENT_CHARACTERISTIC_CONFIG = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
     private val subscriptionRetries = mutableMapOf<String, Int>()
     private val connectionRetries = mutableMapOf<String, Int>()
@@ -70,6 +72,8 @@ class MainActivity : ComponentActivity() {
     private var isProcessingGattOperation = false
     private val isReconnectingForDistance = mutableMapOf<String, Boolean>()
     private val reconnectAttempts = mutableMapOf<String, Int>()
+    private val deviceIdToAddress = mutableMapOf<String, String>() // Maps TX ID (e.g., "ABCD") to TX device address
+    private val rxToTxId = mutableMapOf<String, String>() // Maps RX address to received TX ID
 
     private fun enqueueGattOperation(operation: () -> Unit) {
         gattOperationQueue.add(operation)
@@ -95,6 +99,7 @@ class MainActivity : ComponentActivity() {
     ): Boolean {
         val distanceStr = deviceData[address]?.get("Distance")
         val distanceCm = distanceStr?.replace(" cm", "")?.toDoubleOrNull() ?: tagDataMap[address]?.distance ?: 0.0
+        Log.d(TAG, "Checking distance for $address: distanceStr=$distanceStr, distanceCm=$distanceCm")
         return distanceCm > 0
     }
 
@@ -155,6 +160,10 @@ class MainActivity : ComponentActivity() {
         }, 5000)
     }
 
+    private fun getDynamicDistanceServiceUUID(txId: String): UUID {
+        return UUID.fromString("12345678-1234-5678-1234-${txId}12345678")
+    }
+
     private val gattCallback = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(gatt: BluetoothGatt?, status: Int, newState: Int) {
             val address = gatt?.device?.address ?: return
@@ -198,6 +207,7 @@ class MainActivity : ComponentActivity() {
                         connectionStartTimes.remove(address)
                         lastReadRequestTimes.remove(address)
                         subscriptionRetries.remove(address)
+                        rxToTxId.remove(address)
                         if (savedDeviceAddress.value == address) {
                             getSharedPreferences("AtlasPrefs", Context.MODE_PRIVATE)
                                 .edit().remove("connectedDevice").apply()
@@ -277,55 +287,133 @@ class MainActivity : ComponentActivity() {
                     return
                 }
 
-                gatt.services?.forEach { service ->
-                    Log.d(TAG, "Service UUID: ${service.uuid}")
-                    service.characteristics.forEach { char ->
-                        Log.d(TAG, "  Characteristic UUID: ${char.uuid}, Properties: ${char.properties}")
-                    }
-                }
+                // Define constants for dynamic service UUID matching
+                val expectedPrefix = "12345678-1234-5678-1234-"
+                val expectedSuffix = "12345678"
 
-                val services = listOf(
-                    Pair(BATTERY_SERVICE_UUID, BATTERY_LEVEL_UUID),
-                    Pair(DISTANCE_SERVICE_UUID, DISTANCE_CHAR_UUID)
-                )
-                for ((serviceUuid, charUuid) in services) {
-                    val service = gatt.getService(serviceUuid)
-                    if (service != null) {
-                        Log.d(TAG, "Service $serviceUuid found for $address")
-                        val characteristic = service.getCharacteristic(charUuid)
+                // Log all services and characteristics
+                gatt.services?.forEach { service ->
+                    val serviceUuid = service.uuid.toString()
+                    Log.d(TAG, "Service found: $serviceUuid")
+                    service.characteristics.forEach { char ->
+                        Log.d(TAG, "  Characteristic: ${char.uuid}, Properties: ${char.properties}")
+                    }
+
+                    // Battery Service
+                    if (service.uuid == BATTERY_SERVICE_UUID) {
+                        val characteristic = service.getCharacteristic(BATTERY_LEVEL_UUID)
                         if (characteristic != null) {
-                            Log.d(TAG, "Characteristic $charUuid found, properties: ${characteristic.properties}")
+                            Log.d(TAG, "Battery characteristic found for $address")
                             if ((characteristic.properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY) != 0) {
                                 enqueueGattOperation {
                                     if (gatt.setCharacteristicNotification(characteristic, true)) {
-                                        Log.d(TAG, "setCharacteristicNotification enabled for $charUuid on $address")
+                                        Log.d(TAG, "setCharacteristicNotification enabled for $BATTERY_LEVEL_UUID on $address")
                                     } else {
-                                        Log.e(TAG, "Failed to enable setCharacteristicNotification for $charUuid on $address")
+                                        Log.e(TAG, "Failed to enable setCharacteristicNotification for $BATTERY_LEVEL_UUID on $address")
                                     }
                                     completeGattOperation()
                                 }
                                 val descriptor = characteristic.getDescriptor(CLIENT_CHARACTERISTIC_CONFIG)
                                 if (descriptor != null) {
                                     descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                                    writeDescriptorWithRetry(gatt, descriptor, characteristic, charUuid, address, 0)
+                                    writeDescriptorWithRetry(gatt, descriptor, characteristic, BATTERY_LEVEL_UUID, address, 0)
                                 } else {
-                                    Log.e(TAG, "CCCD descriptor not found for $charUuid on $address")
+                                    Log.e(TAG, "CCCD descriptor not found for $BATTERY_LEVEL_UUID on $address")
                                     if ((characteristic.properties and BluetoothGattCharacteristic.PROPERTY_READ) != 0) {
-                                        startPollingCharacteristic(gatt, characteristic, charUuid, address)
+                                        startPollingCharacteristic(gatt, characteristic, BATTERY_LEVEL_UUID, address)
                                     }
                                 }
-                            } else {
-                                Log.w(TAG, "Characteristic $charUuid does not support notifications on $address, properties=${characteristic.properties}")
-                                if ((characteristic.properties and BluetoothGattCharacteristic.PROPERTY_READ) != 0) {
-                                    startPollingCharacteristic(gatt, characteristic, charUuid, address)
+                            } else if ((characteristic.properties and BluetoothGattCharacteristic.PROPERTY_READ) != 0) {
+                                startPollingCharacteristic(gatt, characteristic, BATTERY_LEVEL_UUID, address)
+                            }
+                        } else {
+                            Log.w(TAG, "Battery characteristic $BATTERY_LEVEL_UUID not found in service $BATTERY_SERVICE_UUID on $address")
+                        }
+                    }
+
+                    // Device ID Service (TX)
+                    if (service.uuid == DEVICE_SERVICE_UUID) {
+                        val characteristic = service.getCharacteristic(DEVICE_ID_CHAR_UUID)
+                        if (characteristic != null) {
+                            Log.d(TAG, "Device ID characteristic found for $address")
+                            if ((characteristic.properties and BluetoothGattCharacteristic.PROPERTY_READ) != 0) {
+                                enqueueGattOperation {
+                                    if (gatt.readCharacteristic(characteristic)) {
+                                        Log.d(TAG, "Reading Device ID for $address")
+                                    } else {
+                                        Log.e(TAG, "Failed to read Device ID for $address")
+                                    }
+                                    completeGattOperation()
+                                }
+                            }
+                            if ((characteristic.properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY) != 0) {
+                                enqueueGattOperation {
+                                    if (gatt.setCharacteristicNotification(characteristic, true)) {
+                                        Log.d(TAG, "setCharacteristicNotification enabled for $DEVICE_ID_CHAR_UUID on $address")
+                                    } else {
+                                        Log.e(TAG, "Failed to enable setCharacteristicNotification for $DEVICE_ID_CHAR_UUID on $address")
+                                    }
+                                    completeGattOperation()
+                                }
+                                val descriptor = characteristic.getDescriptor(CLIENT_CHARACTERISTIC_CONFIG)
+                                if (descriptor != null) {
+                                    descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                                    writeDescriptorWithRetry(gatt, descriptor, characteristic, DEVICE_ID_CHAR_UUID, address, 0)
                                 }
                             }
                         } else {
-                            Log.e(TAG, "Characteristic $charUuid not found in service $serviceUuid on $address")
+                            Log.w(TAG, "Device ID characteristic $DEVICE_ID_CHAR_UUID not found in service $DEVICE_SERVICE_UUID on $address")
                         }
-                    } else {
-                        Log.e(TAG, "Service $serviceUuid not found on $address")
                     }
+
+                    // Dynamic Distance Service (RX)
+                    val serviceUuidStr = service.uuid.toString().lowercase()
+                    if (serviceUuidStr.startsWith(expectedPrefix) && serviceUuidStr.endsWith(expectedSuffix)) {
+                        val txId = serviceUuidStr.substring(24, 28).uppercase() // e.g., "ABCD"
+                        Log.d(TAG, "Dynamic Distance Service found: $serviceUuidStr, TX ID $txId on $address")
+                        rxToTxId[address] = txId // Store TX ID for RX
+                        val currentData = deviceData[address] ?: emptyMap<String, String>()
+                        deviceData[address] = currentData + mapOf("ReceivedTxId" to txId)
+                        Log.d(TAG, "Updated deviceData for $address: ReceivedTxId=$txId")
+                        val characteristic = service.getCharacteristic(DISTANCE_CHAR_UUID)
+                        if (characteristic != null) {
+                            Log.d(TAG, "Distance characteristic $DISTANCE_CHAR_UUID found for TX ID $txId on $address, properties=${characteristic.properties}")
+                            if ((characteristic.properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY) != 0) {
+                                enqueueGattOperation {
+                                    if (gatt.setCharacteristicNotification(characteristic, true)) {
+                                        Log.d(TAG, "setCharacteristicNotification enabled for $DISTANCE_CHAR_UUID (TX ID $txId) on $address")
+                                    } else {
+                                        Log.e(TAG, "Failed to enable setCharacteristicNotification for $DISTANCE_CHAR_UUID (TX ID $txId) on $address")
+                                        if ((characteristic.properties and BluetoothGattCharacteristic.PROPERTY_READ) != 0) {
+                                            startPollingCharacteristic(gatt, characteristic, DISTANCE_CHAR_UUID, address, txId)
+                                        }
+                                    }
+                                    completeGattOperation()
+                                }
+                                val descriptor = characteristic.getDescriptor(CLIENT_CHARACTERISTIC_CONFIG)
+                                if (descriptor != null) {
+                                    descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                                    Log.d(TAG, "Writing CCCD descriptor for $DISTANCE_CHAR_UUID (TX ID $txId) on $address")
+                                    writeDescriptorWithRetry(gatt, descriptor, characteristic, DISTANCE_CHAR_UUID, address, 0, txId)
+                                } else {
+                                    Log.e(TAG, "CCCD descriptor not found for $DISTANCE_CHAR_UUID (TX ID $txId) on $address")
+                                    if ((characteristic.properties and BluetoothGattCharacteristic.PROPERTY_READ) != 0) {
+                                        startPollingCharacteristic(gatt, characteristic, DISTANCE_CHAR_UUID, address, txId)
+                                    }
+                                }
+                            } else if ((characteristic.properties and BluetoothGattCharacteristic.PROPERTY_READ) != 0) {
+                                Log.d(TAG, "Distance characteristic supports READ, starting polling for $address")
+                                startPollingCharacteristic(gatt, characteristic, DISTANCE_CHAR_UUID, address, txId)
+                            } else {
+                                Log.e(TAG, "Distance characteristic $DISTANCE_CHAR_UUID does not support NOTIFY or READ on $address")
+                            }
+                        } else {
+                            Log.e(TAG, "Distance characteristic $DISTANCE_CHAR_UUID not found in service $serviceUuidStr on $address")
+                        }
+                    }
+                }
+                if (gatt.services?.none { it.uuid.toString().lowercase().startsWith(expectedPrefix) && it.uuid.toString().lowercase().endsWith(expectedSuffix) } == true) {
+                    Log.w(TAG, "No dynamic distance service found for $address")
                 }
             } else {
                 Log.e(TAG, "Service discovery failed for $address, status=$status")
@@ -351,12 +439,13 @@ class MainActivity : ComponentActivity() {
             characteristic: BluetoothGattCharacteristic,
             charUuid: UUID,
             address: String,
-            attempt: Int
+            attempt: Int,
+            txId: String? = null
         ) {
             if (attempt >= 3) {
-                Log.e(TAG, "Max retries reached for descriptor write for $charUuid on $address")
+                Log.e(TAG, "Max retries reached for descriptor write for $charUuid on $address${txId?.let { " (TX ID $it)" } ?: ""}")
                 if ((characteristic.properties and BluetoothGattCharacteristic.PROPERTY_READ) != 0) {
-                    startPollingCharacteristic(gatt, characteristic, charUuid, address)
+                    startPollingCharacteristic(gatt, characteristic, charUuid, address, txId)
                 }
                 completeGattOperation()
                 return
@@ -368,11 +457,11 @@ class MainActivity : ComponentActivity() {
             ) {
                 enqueueGattOperation {
                     if (gatt.writeDescriptor(descriptor)) {
-                        Log.d(TAG, "Attempt ${attempt + 1}: Descriptor write initiated for $charUuid on $address")
+                        Log.d(TAG, "Attempt ${attempt + 1}: Descriptor write initiated for $charUuid on $address${txId?.let { " (TX ID $it)" } ?: ""}")
                     } else {
-                        Log.e(TAG, "Attempt ${attempt + 1}: Failed to initiate descriptor write for $charUuid on $address")
+                        Log.e(TAG, "Attempt ${attempt + 1}: Failed to initiate descriptor write for $charUuid on $address${txId?.let { " (TX ID $it)" } ?: ""}")
                         Handler(Looper.getMainLooper()).postDelayed({
-                            writeDescriptorWithRetry(gatt, descriptor, characteristic, charUuid, address, attempt + 1)
+                            writeDescriptorWithRetry(gatt, descriptor, characteristic, charUuid, address, attempt + 1, txId)
                         }, 500)
                         completeGattOperation()
                     }
@@ -386,9 +475,10 @@ class MainActivity : ComponentActivity() {
             gatt: BluetoothGatt,
             characteristic: BluetoothGattCharacteristic,
             charUuid: UUID,
-            address: String
+            address: String,
+            txId: String? = null
         ) {
-            Log.d(TAG, "Starting polling for $charUuid on $address")
+            Log.d(TAG, "Starting polling for $charUuid on $address${txId?.let { " (TX ID $it)" } ?: ""}")
             Handler(Looper.getMainLooper()).postDelayed(object : Runnable {
                 override fun run() {
                     if (ActivityCompat.checkSelfPermission(
@@ -399,9 +489,9 @@ class MainActivity : ComponentActivity() {
                         if (connectionStates[address] == "Connected") {
                             enqueueGattOperation {
                                 if (gatt.readCharacteristic(characteristic)) {
-                                    Log.d(TAG, "Polling read initiated for $charUuid on $address")
+                                    Log.d(TAG, "Polling read initiated for $charUuid on $address${txId?.let { " (TX ID $it)" } ?: ""}")
                                 } else {
-                                    Log.e(TAG, "Failed to initiate polling read for $charUuid on $address")
+                                    Log.e(TAG, "Failed to initiate polling read for $charUuid on $address${txId?.let { " (TX ID $it)" } ?: ""}")
                                 }
                                 completeGattOperation()
                             }
@@ -470,6 +560,25 @@ class MainActivity : ComponentActivity() {
                 val value = characteristic.value?.let { bytes ->
                     when (uuid) {
                         BATTERY_LEVEL_UUID -> bytes[0].toInt().toString() + "%"
+                        DEVICE_ID_CHAR_UUID -> String(bytes) // e.g., "UWB_TX_ABCD"
+                        DISTANCE_CHAR_UUID -> {
+                            if (bytes.size >= 4) {
+                                try {
+                                    val distanceMeters = ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.LITTLE_ENDIAN).float
+                                    if (distanceMeters.isFinite()) {
+                                        val distanceCm = distanceMeters * 100.0
+                                        String.format("%.2f cm", distanceCm)
+                                    } else {
+                                        "Invalid"
+                                    }
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "Failed to parse distance read: ${e.message}")
+                                    "Error"
+                                }
+                            } else {
+                                "Insufficient bytes"
+                            }
+                        }
                         else -> String(bytes)
                     }
                 } ?: "Unknown"
@@ -477,16 +586,49 @@ class MainActivity : ComponentActivity() {
                 val requestTime = lastReadRequestTimes[address] ?: currentTime
                 val latency = (currentTime - requestTime).toString() + " ms"
 
-                val currentData = deviceData[address] ?: emptyMap()
-                deviceData[address] = currentData + when (uuid) {
-                    BATTERY_LEVEL_UUID -> "Battery" to value
-                    else -> uuid.toString() to value
-                } + ("Latency" to latency)
+                val currentData = deviceData[address] ?: emptyMap<String, String>()
+                val newData: Map<String, String> = when (uuid) {
+                    BATTERY_LEVEL_UUID -> mapOf("Battery" to value)
+                    DEVICE_ID_CHAR_UUID -> {
+                        val txId = value.removePrefix("UWB_TX_").uppercase() // e.g., "ABCD"
+                        if (txId.length == 4) {
+                            deviceIdToAddress[txId] = address
+                            Log.d(TAG, "Mapped TX ID $txId to TX address $address")
+                        } else {
+                            Log.w(TAG, "Invalid Device ID format: $value")
+                        }
+                        mapOf("DeviceID" to value)
+                    }
+                    DISTANCE_CHAR_UUID -> {
+                        if (value.endsWith("cm")) {
+                            val txId = rxToTxId[address] ?: "Unknown"
+                            val txAddress = deviceIdToAddress[txId]
+                            if (txAddress != null) {
+                                val txCurrentData = deviceData[txAddress] ?: emptyMap<String, String>()
+                                deviceData[txAddress] = txCurrentData + mapOf("Distance" to value)
+                                val distanceCm = value.replace(" cm", "").toDoubleOrNull() ?: 0.0
+                                val txTagData = tagDataMap[txAddress] ?: TagData(txAddress, 0.0, 0.0, 0)
+                                tagDataMap[txAddress] = txTagData.copy(distance = distanceCm)
+                                Log.d(TAG, "Read distance $value for TX $txAddress (from RX $address, TX ID $txId)")
+                                mapOf() // Return empty map as we've updated txAddress directly
+                            } else {
+                                Log.w(TAG, "No TX address for TX ID $txId, storing distance $value under RX $address")
+                                mapOf("Distance" to value)
+                            }
+                        } else {
+                            Log.w(TAG, "Invalid distance read: $value")
+                            mapOf("Distance" to value)
+                        }
+                    }
+                    else -> mapOf(uuid.toString() to value)
+                }
+                deviceData[address] = currentData + newData + mapOf("Latency" to latency)
                 Log.d(TAG, "Read $uuid for $address: $value, Latency: $latency")
 
                 val batteryValue = if (uuid == BATTERY_LEVEL_UUID) value.removeSuffix("%").toIntOrNull() ?: 0 else 0
+                val distanceValue = if (uuid == DISTANCE_CHAR_UUID && value.endsWith("cm")) value.replace(" cm", "").toDoubleOrNull() ?: 0.0 else 0.0
                 val currentTagData = tagDataMap[address] ?: TagData(address, 0.0, 0.0, batteryValue)
-                tagDataMap[address] = currentTagData.copy(battery = batteryValue)
+                tagDataMap[address] = currentTagData.copy(battery = batteryValue, distance = distanceValue)
             } else {
                 Log.e(TAG, "Characteristic read failed for ${characteristic?.uuid} on ${gatt?.device?.address}, status=$status")
             }
@@ -508,11 +650,22 @@ class MainActivity : ComponentActivity() {
                     if (bytes.isNotEmpty()) {
                         val batteryLevel = bytes[0].toInt()
                         tagDataMap[address] = currentTagData.copy(battery = batteryLevel)
-                        deviceData[address] = (deviceData[address] ?: emptyMap()) + ("Battery" to "$batteryLevel%")
+                        deviceData[address] = (deviceData[address] ?: emptyMap()) + mapOf("Battery" to "$batteryLevel%")
                         Log.d(TAG, "Battery notification for $address: $batteryLevel%")
                     } else {
                         Log.w(TAG, "Empty battery notification for $address")
                     }
+                }
+                DEVICE_ID_CHAR_UUID -> {
+                    val deviceId = String(bytes) // e.g., "UWB_TX_ABCD"
+                    val txId = deviceId.removePrefix("UWB_TX_").uppercase() // e.g., "ABCD"
+                    if (txId.length == 4) {
+                        deviceIdToAddress[txId] = address
+                        Log.d(TAG, "Device ID notification for $address: $deviceId, mapped TX ID $txId to $address")
+                    } else {
+                        Log.w(TAG, "Invalid Device ID format: $deviceId")
+                    }
+                    deviceData[address] = (deviceData[address] ?: emptyMap()) + mapOf("DeviceID" to deviceId)
                 }
                 DISTANCE_CHAR_UUID -> {
                     if (bytes.size >= 4) {
@@ -520,13 +673,34 @@ class MainActivity : ComponentActivity() {
                             val distanceMeters = ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.LITTLE_ENDIAN).float
                             if (distanceMeters.isFinite()) {
                                 val distanceCm = distanceMeters * 100.0
-                                tagDataMap[address] = currentTagData.copy(distance = distanceCm.toDouble())
-                                deviceData[address] = (deviceData[address] ?: emptyMap()) + ("Distance" to String.format("%.2f cm", distanceCm))
-                                Log.d(TAG, "Distance notification for $address: $distanceCm cm")
-                                if (distanceCm > 0) {
-                                    isReconnectingForDistance.remove(address)
-                                    reconnectAttempts.remove(address)
-                                    Log.d(TAG, "Valid distance received for $address, stopping reconnection cycle")
+                                val serviceUuid = gatt.services.find { svc ->
+                                    svc.getCharacteristic(DISTANCE_CHAR_UUID) == characteristic
+                                }?.uuid?.toString() ?: ""
+                                val txId = if (serviceUuid.lowercase().startsWith("12345678-1234-5678-1234-") && serviceUuid.lowercase().endsWith("12345678")) {
+                                    serviceUuid.substring(24, 28).uppercase() // e.g., "ABCD"
+                                } else {
+                                    rxToTxId[address] // Fallback to stored TX ID
+                                }
+                                Log.d(TAG, "Distance notification on $address, service UUID $serviceUuid, TX ID $txId")
+                                if (txId != null) {
+                                    val txAddress = deviceIdToAddress[txId]
+                                    if (txAddress != null) {
+                                        val txTagData = tagDataMap[txAddress] ?: TagData(txAddress, 0.0, 0.0, 0)
+                                        tagDataMap[txAddress] = txTagData.copy(distance = distanceCm.toDouble())
+                                        deviceData[txAddress] = (deviceData[txAddress] ?: emptyMap()) + mapOf("Distance" to String.format("%.2f cm", distanceCm))
+                                        Log.d(TAG, "Assigned distance $distanceCm cm to TX $txAddress (from RX $address, TX ID $txId)")
+                                        if (distanceCm > 0) {
+                                            isReconnectingForDistance.remove(address)
+                                            reconnectAttempts.remove(address)
+                                            Log.d(TAG, "Valid distance received for TX $txAddress, stopping reconnection cycle")
+                                        }
+                                    } else {
+                                        Log.w(TAG, "No TX address mapped for TX ID $txId, storing under RX $address temporarily")
+                                        tagDataMap[address] = currentTagData.copy(distance = distanceCm.toDouble())
+                                        deviceData[address] = (deviceData[address] ?: emptyMap()) + mapOf("Distance" to String.format("%.2f cm", distanceCm))
+                                    }
+                                } else {
+                                    Log.e(TAG, "No TX ID found for distance notification on $address")
                                 }
                             } else {
                                 Log.w(TAG, "Invalid distance value: $distanceMeters")
@@ -547,9 +721,9 @@ class MainActivity : ComponentActivity() {
                 val address = gatt?.device?.address ?: return
                 val currentTime = System.currentTimeMillis()
                 val requestTime = lastReadRequestTimes[address] ?: currentTime
-                var latency = (currentTime - requestTime).toString() + " ms"
-                val currentData = deviceData[address] ?: emptyMap()
-                deviceData[address] = currentData + ("RSSI" to "$rssi dBm") + ("Latency" to latency)
+                val latency = (currentTime - requestTime).toString() + " ms"
+                val currentData = deviceData[address] ?: emptyMap<String, String>()
+                deviceData[address] = currentData + mapOf("RSSI" to "$rssi dBm", "Latency" to latency)
                 Log.d(TAG, "RSSI for $address: $rssi dBm, Latency: $latency")
             } else {
                 Log.e(TAG, "RSSI read failed for ${gatt?.device?.address}, status=$status")
@@ -606,7 +780,6 @@ class MainActivity : ComponentActivity() {
                 }
                 val context = LocalContext.current
 
-                // Save leaveBehindDistance, isLeaveBehindEnabled, and isAdvancedMode to SharedPreferences
                 LaunchedEffect(leaveBehindDistance.value, isLeaveBehindEnabled.value, isAdvancedMode.value) {
                     getSharedPreferences("AtlasPrefs", Context.MODE_PRIVATE)
                         .edit()
@@ -707,7 +880,7 @@ class MainActivity : ComponentActivity() {
                             leaveBehindDistance = leaveBehindDistance,
                             isLeaveBehindEnabled = isLeaveBehindEnabled,
                             isAdvancedMode = isAdvancedMode,
-                            userRepository = userRepository, // Pass the new state
+                            userRepository = userRepository,
                             onConnect = { address ->
                                 if (ActivityCompat.checkSelfPermission(
                                         this@MainActivity,
@@ -745,11 +918,13 @@ class MainActivity : ComponentActivity() {
                                         connectionStates[address] = "Disconnected"
                                         isReconnectingForDistance.remove(address)
                                         reconnectAttempts.remove(address)
+                                        rxToTxId.remove(address)
                                     } ?: run {
                                         Log.w(TAG, "No GATT found for $address, forcing state to Disconnected")
                                         connectionStates[address] = "Disconnected"
                                         isReconnectingForDistance.remove(address)
                                         reconnectAttempts.remove(address)
+                                        rxToTxId.remove(address)
                                     }
                                 }
                             }

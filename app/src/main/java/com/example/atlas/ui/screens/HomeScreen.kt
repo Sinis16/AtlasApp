@@ -58,7 +58,6 @@ fun HomeScreen(
     val BATTERY_SERVICE_UUID = UUID.fromString("0000180F-0000-1000-8000-00805F9B34FB")
     val BATTERY_LEVEL_UUID = UUID.fromString("00002A19-0000-1000-8000-00805F9B34FB")
 
-    // Load user data from clients table and validate session
     LaunchedEffect(Unit) {
         Log.d(TAG, "Checking user session")
         try {
@@ -78,15 +77,17 @@ fun HomeScreen(
         }
     }
 
-    // Monitor distances and manage notifications
     LaunchedEffect(tagDataMap, connectionStates, leaveBehindDistance.value, isLeaveBehindEnabled.value) {
         while (true) {
             val connectedDevices = connectionStates.filter { it.value == "Connected" }.keys
             for (address in connectedDevices) {
+                val deviceId = deviceData[address]?.get("DeviceID")
+                if (deviceId?.startsWith("UWB_TX_") != true) continue // Only process TX devices for notifications
                 val distance = tagDataMap[address]?.distance ?: 0.0
                 val currentStatus = notificationState[address] ?: NotificationStatus.None
                 val threshold = leaveBehindDistance.value.toDouble()
 
+                Log.d(TAG, "Checking notification for $address: distance=$distance cm, threshold=$threshold cm, status=$currentStatus")
                 when {
                     distance > threshold && currentStatus == NotificationStatus.None -> {
                         notificationDeviceAddress = address
@@ -114,7 +115,6 @@ fun HomeScreen(
         }
     }
 
-    // GATT reads for battery and RSSI
     LaunchedEffect(updateRate.value) {
         while (true) {
             if (ActivityCompat.checkSelfPermission(
@@ -130,8 +130,10 @@ fun HomeScreen(
                         val batteryService = gatt.getService(BATTERY_SERVICE_UUID)
                         batteryService?.getCharacteristic(BATTERY_LEVEL_UUID)?.let { char ->
                             gatt.readCharacteristic(char)
+                            Log.d(TAG, "Initiated battery read for $address")
                         }
                         gatt.readRemoteRssi()
+                        Log.d(TAG, "Initiated RSSI read for $address")
                     }
                 }
             } else {
@@ -153,7 +155,7 @@ fun HomeScreen(
             modifier = Modifier.padding(bottom = 8.dp)
         )
 
-        val connectedDevices = connectionStates.filter { it.value == "Connected" }.keys
+        val connectedDevices = connectionStates.filter { it.value == "Connected" }.keys.toList()
         if (connectedDevices.isEmpty()) {
             Text(
                 text = "No devices connected",
@@ -161,30 +163,35 @@ fun HomeScreen(
                 modifier = Modifier.padding(top = 16.dp)
             )
         } else {
+            Log.d(TAG, "Displaying ${connectedDevices.size} connected devices: $connectedDevices")
             LazyColumn(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
             ) {
-                items(connectedDevices.toList()) { address ->
+                items(connectedDevices) { address ->
                     val device = foundDevices.find { it.address == address }
-                    var name = device?.name ?: "Unknown Device"
-                    if (name == null) {
-                        name = "Unknown Device"
-                    }
-                    val distance = deviceData[address]?.get("Distance")
+                    val deviceId = deviceData[address]?.get("DeviceID")
+                    val isTx = deviceId?.startsWith("UWB_TX_") == true
+                    val name = device?.name ?: deviceId ?: "Unknown Device"
+                    val displayName = if (isTx) "$name (TX)" else "$name (RX)"
+                    val distance = if (isTx) deviceData[address]?.get("Distance") else null
                     val displayDistance = when {
-                        distance == null || tagDataMap[address]?.distance == 0.0 -> "loading..."
+                        !isTx -> ""
+                        distance == null || tagDataMap[address]?.distance == 0.0 -> {
+                            Log.w(TAG, "No distance available for TX $address: deviceData=${deviceData[address]}, tagData=${tagDataMap[address]?.distance}")
+                            if (isAdvancedMode.value) "No distance received" else "loading..."
+                        }
                         else -> distance
                     }
 
-                    // Parse distance for color interpolation (in cm)
-                    val distanceValue = tagDataMap[address]?.distance ?: 0.0
+                    val distanceValue = if (isTx) tagDataMap[address]?.distance ?: 0.0 else 0.0
                     val fraction = (distanceValue / 700.0).coerceIn(0.0, 1.0).toFloat()
                     val greyishRed = Color(0xFF7A1515)
                     val greyishBlue = Color(0xFF2C2C62)
                     val interpolatedColor = lerp(greyishRed, greyishBlue, fraction)
 
+                    Log.d(TAG, "Rendering device $address: name=$displayName, isTx=$isTx, distance=$displayDistance")
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -207,7 +214,7 @@ fun HomeScreen(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text(text = name, fontSize = 16.sp)
+                            Text(text = displayName, fontSize = 16.sp)
                             Text(text = displayDistance, fontSize = 16.sp)
                         }
                     }
@@ -217,15 +224,15 @@ fun HomeScreen(
 
         selectedDeviceAddress?.let { address ->
             val device = foundDevices.find { it.address == address }
-            var name = device?.name ?: "Unknown Device"
-            if (name == null) {
-                name = "Unknown Device"
-            }
+            val deviceId = deviceData[address]?.get("DeviceID")
+            val isTx = deviceId?.startsWith("UWB_TX_") == true
+            val name = device?.name ?: deviceId ?: "Unknown Device"
+            val displayName = if (isTx) "$name (TX)" else "$name (RX)"
             val data = deviceData[address] ?: emptyMap()
             val tagData = tagDataMap[address]
 
             Text(
-                text = "Details for $name",
+                text = "Details for $displayName",
                 style = MaterialTheme.typography.headlineSmall,
                 modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
             )
@@ -235,7 +242,9 @@ fun HomeScreen(
             data.entries.forEach { (key, value) ->
                 when (key) {
                     "Battery" -> details.add("Battery: $value")
-                    "Distance" -> details.add("Distance: $value")
+                    "Distance" -> if (isTx) details.add("Distance: $value")
+                    "DeviceID" -> if (isAdvancedMode.value) details.add("Device ID: $value")
+                    "ReceivedTxId" -> if (isAdvancedMode.value && !isTx) details.add("Received TX ID: $value")
                     "RSSI" -> {
                         val rssiValue = value.removeSuffix(" dBm").toIntOrNull() ?: 0
                         val connectivity = if (rssiValue >= -70) "Strong" else "Weak"
@@ -307,13 +316,10 @@ fun HomeScreen(
         }
     }
 
-    // Notification Dialog
     notificationDeviceAddress?.let { address ->
         val device = foundDevices.find { it.address == address }
-        var name = device?.name ?: "Unknown Device"
-        if (name == null) {
-            name = "Unknown Device"
-        }
+        val deviceId = deviceData[address]?.get("DeviceID")
+        val name = device?.name ?: deviceId ?: "Unknown Device"
         val tagData = tagDataMap[address]
         val tagId = tagData?.id ?: address
 
@@ -395,7 +401,6 @@ fun HomeScreen(
     }
 }
 
-// Sealed class to track notification status per device
 private sealed class NotificationStatus {
     object None : NotificationStatus()
     object Shown : NotificationStatus()
