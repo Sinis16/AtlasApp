@@ -1,5 +1,6 @@
 package com.example.atlas.ui.screens
 
+import android.annotation.SuppressLint
 import android.os.Build
 import android.util.Log
 import androidx.annotation.RequiresApi
@@ -25,6 +26,7 @@ import com.example.atlas.permissions.dispatcher.dsl.doOnGranted
 import com.example.atlas.permissions.dispatcher.dsl.rationale
 import com.example.atlas.permissions.dispatcher.dsl.withRequestCode
 
+@SuppressLint("UnrememberedMutableState")
 @RequiresApi(Build.VERSION_CODES.S)
 @Composable
 fun CardConnectionScreen(
@@ -41,6 +43,13 @@ fun CardConnectionScreen(
     var showRationaleDialog by remember { mutableStateOf(false) }
     var rationaleMessage by remember { mutableStateOf("") }
     var connectionError by remember { mutableStateOf<String?>(null) }
+
+    // Track if a Proton device is connected
+    val isProtonConnected by derivedStateOf {
+        connectionStates.any { (address, state) ->
+            state == "Connected" && foundDevices.find { it.address == address }?.name?.startsWith("Proton") == true
+        }
+    }
 
     LaunchedEffect(Unit) {
         permissionManager.buildRequestResultsDispatcher {
@@ -151,15 +160,21 @@ fun CardConnectionScreen(
             )
         }
 
-        if (foundDevices.isEmpty()) {
+        // Filter devices to show only Proton and Electron (Electron only if Proton is connected)
+        val filteredDevices = foundDevices.filter { device ->
+            device.name != null &&
+                    device.name != "Unknown" &&
+                    (device.name.startsWith("Proton") ||
+                            (device.name.startsWith("Electron") && isProtonConnected))
+        }
+
+        if (filteredDevices.isEmpty()) {
             Text(text = "No devices found", fontSize = 16.sp, modifier = Modifier.padding(top = 8.dp))
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxWidth()
             ) {
-                items(
-                    foundDevices.filter { it.name != null && it.name != "Unknown" }.toList()
-                ) { device ->
+                items(filteredDevices) { device ->
                     DeviceItem(
                         device = device,
                         connectionState = connectionStates[device.address] ?: "Disconnected",
