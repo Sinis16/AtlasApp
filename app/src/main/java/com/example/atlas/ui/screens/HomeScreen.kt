@@ -202,9 +202,19 @@ fun HomeScreen(
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(text = displayName, fontSize = 16.sp)
+                            Button(
+                                onClick = {
+                                    navController.navigate("deviceDetail/$address")
+                                    Log.d(TAG, "Navigating to DeviceDetailScreen for RX address: $address")
+                                },
+                                modifier = Modifier.size(width = 100.dp, height = 36.dp)
+                            ) {
+                                Text("Details")
+                            }
                         }
 
                         if (isSelected) {
@@ -325,10 +335,25 @@ fun HomeScreen(
                                         ) {
                                             Row(
                                                 modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
                                             ) {
                                                 Text(text = displayTxName, fontSize = 14.sp)
-                                                Text(text = displayText, fontSize = 14.sp)
+                                                Row(
+                                                    horizontalArrangement = Arrangement.End
+                                                ) {
+                                                    Text(text = displayText, fontSize = 14.sp)
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    Button(
+                                                        onClick = {
+                                                            navController.navigate("deviceDetail/$txAddress")
+                                                            Log.d(TAG, "Navigating to DeviceDetailScreen for TX address: $txAddress")
+                                                        },
+                                                        modifier = Modifier.size(width = 100.dp, height = 36.dp)
+                                                    ) {
+                                                        Text("Details")
+                                                    }
+                                                }
                                             }
                                         }
 

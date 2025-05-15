@@ -20,6 +20,7 @@ import com.example.atlas.models.TagData
 import com.example.atlas.permissions.PermissionManager
 import com.example.atlas.ui.screens.CardConnectionScreen
 import com.example.atlas.ui.screens.ChangeDataScreen
+import com.example.atlas.ui.screens.DeviceDetailScreen
 import com.example.atlas.ui.screens.HomeScreen
 import com.example.atlas.ui.screens.LogInScreen
 import com.example.atlas.ui.screens.ProfileScreen
@@ -87,8 +88,10 @@ fun AppNavHost(
             )
         }
         composable("profile") {
-            ProfileScreen(navController = navController,
-                isAdvancedMode = isAdvancedMode)
+            ProfileScreen(
+                navController = navController,
+                isAdvancedMode = isAdvancedMode
+            )
         }
         composable("settings") {
             SettingsScreen(
@@ -121,6 +124,24 @@ fun AppNavHost(
                 updateRate = updateRate,
                 tagDataMap = tagDataMap,
                 tagId = tagId
+            )
+        }
+        composable(
+            route = "deviceDetail/{bleId}",
+            arguments = listOf(
+                navArgument("bleId") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                }
+            )
+        ) { backStackEntry ->
+            val bleId = backStackEntry.arguments?.getString("bleId") ?: ""
+            DeviceDetailScreen(
+                navController = navController,
+                bleId = bleId,
+                connectionStates = connectionStates,
+                deviceData = deviceData,
+                tagDataMap = tagDataMap
             )
         }
         composable("changeData") {
