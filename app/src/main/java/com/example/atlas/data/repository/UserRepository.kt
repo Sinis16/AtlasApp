@@ -428,6 +428,19 @@ class UserRepository @Inject constructor(
         }
     }
 
+    suspend fun findUserByEmail(email: String): User? = withContext(Dispatchers.IO) {
+        try {
+            val result = supabaseClient.from("clients")
+                .select {
+                    filter { eq("email", email) }
+                }
+                .decodeSingleOrNull<User>()
+            result
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     suspend fun signInHELP(): Boolean {
         return try {
             supabaseClient.auth.signInWith(Github)

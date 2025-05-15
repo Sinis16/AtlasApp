@@ -11,7 +11,9 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.example.atlas.models.TagData
 import com.example.atlas.ui.viewmodel.TrackerViewModel
+import com.example.atlas.ui.viewmodel.UserViewModel
 import androidx.compose.runtime.snapshots.SnapshotStateMap
+import kotlinx.coroutines.launch
 
 @Composable
 fun DeviceDetailScreen(
@@ -23,108 +25,234 @@ fun DeviceDetailScreen(
     modifier: Modifier = Modifier
 ) {
     val trackerViewModel: TrackerViewModel = hiltViewModel()
+    val userViewModel: UserViewModel = hiltViewModel()
     val tracker by trackerViewModel.selectedTracker.collectAsState()
     val connectionStatus = connectionStates[bleId] ?: "Disconnected"
     val deviceInfo = deviceData[bleId] ?: emptyMap()
     val distance = deviceInfo["Distance"] ?: "N/A"
     val battery = deviceInfo["Battery"] ?: "N/A"
     val tagData = tagDataMap[bleId]
+    val coroutineScope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+    var showAddFamilyDialog by remember { mutableStateOf(false) }
+    var familyEmail by remember { mutableStateOf("") }
 
     LaunchedEffect(bleId) {
         trackerViewModel.getTrackerByBleId(bleId)
     }
 
-    Surface(
-        modifier = modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background
-    ) {
-        Column(
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        modifier = modifier.fillMaxSize()
+    ) { paddingValues ->
+        Surface(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.Top,
-            horizontalAlignment = Alignment.Start
+                .padding(paddingValues),
+            color = MaterialTheme.colorScheme.background
         ) {
-            Text(
-                text = "Device Details",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 16.dp)
-            )
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.Top,
+                horizontalAlignment = Alignment.Start
+            ) {
+                Text(
+                    text = "Device Details",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
 
-            tracker?.let { tracker ->
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-                ) {
-                    Column(
+                tracker?.let { tracker ->
+                    Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp)
+                            .padding(vertical = 8.dp),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
                     ) {
-                        Text(
-                            text = "Name: ${tracker.name}",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "BLE ID: ${tracker.ble_id}",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        Text(
-                            text = "Type: ${tracker.type}",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        Text(
-                            text = "Status: $connectionStatus",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        Text(
-                            text = "Distance: $distance",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        Text(
-                            text = "Battery: $battery",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        tracker.last_connection?.let {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp)
+                        ) {
                             Text(
-                                text = "Last Connection: $it",
+                                text = "Name: ${tracker.name}",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "BLE ID: ${tracker.ble_id}",
                                 style = MaterialTheme.typography.bodyMedium
                             )
-                        }
-                        tracker.last_connection?.let {
                             Text(
-                                text = "Last latitude: $tracker.last_latitude",
+                                text = "Type: ${tracker.type}",
                                 style = MaterialTheme.typography.bodyMedium
                             )
-                        }
-                        tracker.last_connection?.let {
                             Text(
-                                text = "Last longitude: ${tracker.last_longitude}",
+                                text = "Status: $connectionStatus",
                                 style = MaterialTheme.typography.bodyMedium
                             )
+                            Text(
+                                text = "Distance: $distance",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                text = "Battery: $battery",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            tracker.last_connection?.let {
+                                Text(
+                                    text = "Last Connection: $it",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            }
+                            tracker.last_latitude?.let {
+                                Text(
+                                    text = "Last Latitude: $it",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            }
+                            tracker.last_longitude?.let {
+                                Text(
+                                    text = "Last Longitude: $it",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            }
                         }
                     }
-                }
-            } ?: run {
-                Text(
-                    text = "No tracker found for BLE ID: $bleId",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.error
-                )
-            }
 
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(
-                onClick = { navController.popBackStack() },
-                modifier = Modifier.align(Alignment.End)
-            ) {
-                Text("Back")
+                    // Buttons
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = { showAddFamilyDialog = true },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Add Family")
+                        }
+                        Button(
+                            onClick = {
+                                // TODO: Implement Delete Family
+                                coroutineScope.launch {
+                                    snackbarHostState.showSnackbar("Delete Family: TODO")
+                                }
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Delete Family")
+                        }
+                        Button(
+                            onClick = {
+                                // TODO: Implement Change Name
+                                coroutineScope.launch {
+                                    snackbarHostState.showSnackbar("Change Name: TODO")
+                                }
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Change Name")
+                        }
+                        Button(
+                            onClick = {
+                                // TODO: Implement Reset Tag
+                                coroutineScope.launch {
+                                    snackbarHostState.showSnackbar("Reset Tag: TODO")
+                                }
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Reset Tag")
+                        }
+                    }
+                } ?: run {
+                    Text(
+                        text = "No tracker found for BLE ID: $bleId",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
             }
+        }
+
+        // Add Family Dialog
+        if (showAddFamilyDialog) {
+            AlertDialog(
+                onDismissRequest = {
+                    showAddFamilyDialog = false
+                    familyEmail = ""
+                },
+                title = { Text("Add Family Member") },
+                text = {
+                    Column {
+                        Text("Enter the email of the family member to add:")
+                        Spacer(modifier = Modifier.height(8.dp))
+                        TextField(
+                            value = familyEmail,
+                            onValueChange = { familyEmail = it },
+                            label = { Text("Email") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            tracker?.let { currentTracker ->
+                                coroutineScope.launch {
+                                    val user = userViewModel.findUserByEmail(familyEmail)
+                                    if (user == null) {
+                                        snackbarHostState.showSnackbar("User not found")
+                                        showAddFamilyDialog = false
+                                        familyEmail = ""
+                                        return@launch
+                                    }
+
+                                    val updatedTracker = when {
+                                        currentTracker.user2 == null -> {
+                                            currentTracker.copy(user2 = user.id)
+                                        }
+                                        currentTracker.user3 == null -> {
+                                            currentTracker.copy(user3 = user.id)
+                                        }
+                                        else -> {
+                                            snackbarHostState.showSnackbar("Cannot add more family members")
+                                            showAddFamilyDialog = false
+                                            familyEmail = ""
+                                            return@launch
+                                        }
+                                    }
+
+                                    trackerViewModel.updateTracker(updatedTracker)
+                                    snackbarHostState.showSnackbar("Family member added successfully")
+                                    showAddFamilyDialog = false
+                                    familyEmail = ""
+                                }
+                            }
+                        }
+                    ) {
+                        Text("Confirm")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            showAddFamilyDialog = false
+                            familyEmail = ""
+                        }
+                    ) {
+                        Text("Cancel")
+                    }
+                }
+            )
         }
     }
 }
