@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -16,7 +17,11 @@ import androidx.navigation.NavHostController
 import com.example.atlas.ui.viewmodel.UserViewModel
 
 @Composable
-fun ProfileScreen(navController: NavHostController, userViewModel: UserViewModel = hiltViewModel()) {
+fun ProfileScreen(
+    navController: NavHostController,
+    isAdvancedMode: MutableState<Boolean>,
+    userViewModel: UserViewModel = hiltViewModel()
+) {
     val context = LocalContext.current
     val user by userViewModel.user.collectAsStateWithLifecycle()
     val isAuthenticated by userViewModel.isAuthenticated.collectAsStateWithLifecycle()
@@ -65,8 +70,15 @@ fun ProfileScreen(navController: NavHostController, userViewModel: UserViewModel
                 )
                 Text(
                     text = "Email: ${user!!.email}",
-                    style = MaterialTheme.typography.headlineMedium
+                    style = MaterialTheme.typography.headlineMedium,
+                    modifier = Modifier.padding(bottom = 8.dp)
                 )
+                if (isAdvancedMode.value) {
+                    Text(
+                        text = "UUID: ${user!!.id}",
+                        style = MaterialTheme.typography.headlineMedium
+                    )
+                }
             }
         }
 

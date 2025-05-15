@@ -87,7 +87,8 @@ fun AppNavHost(
             )
         }
         composable("profile") {
-            ProfileScreen(navController = navController)
+            ProfileScreen(navController = navController,
+                isAdvancedMode = isAdvancedMode)
         }
         composable("settings") {
             SettingsScreen(
