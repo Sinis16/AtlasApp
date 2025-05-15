@@ -263,8 +263,10 @@ fun CardConnectionScreen(
         bleScanManager.afterScanActions.clear()
         bleScanManager.beforeScanActions.add {
             isScanning = true
-            foundDevices.clear()
-            Log.d("CardConnectionScreen", "Scan started")
+            // Retain connected devices in foundDevices
+            val connectedAddresses = connectionStates.filter { it.value == "Connected" }.keys
+            foundDevices.retainAll { device -> connectedAddresses.contains(device.address) }
+            Log.d("CardConnectionScreen", "Scan started, retained connected devices: $connectedAddresses")
         }
         bleScanManager.afterScanActions.add {
             isScanning = false

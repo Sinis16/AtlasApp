@@ -155,9 +155,11 @@ fun HomeScreen(
             modifier = Modifier.padding(bottom = 8.dp)
         )
 
-        val rxDevices = connectionStates.entries.filter { (address: String, state: String) ->
-            state == "Connected" && deviceData[address]?.get("DeviceID")?.startsWith("UWB_TX_") != true
+        // Filter RX devices (Proton devices only)
+        val rxDevices = connectionStates.entries.filter { (address, state) ->
+            state == "Connected" && foundDevices.find { it.address == address }?.name?.startsWith("Proton") == true
         }.map { it.key }
+
         if (rxDevices.isEmpty()) {
             Text(
                 text = "No receivers connected",
@@ -175,7 +177,7 @@ fun HomeScreen(
                     val device = foundDevices.find { it.address == address }
                     val deviceId = deviceData[address]?.get("DeviceID")
                     val name = device?.name ?: deviceId ?: "Unknown Receiver"
-                    val displayName = "$name (RX)"
+                    val displayName = if (isAdvancedMode.value) "$name (RX)" else name
 
                     val greyishBlue = Color(0xFF2C2C62)
                     val isSelected = selectedDeviceAddress == address
@@ -268,15 +270,10 @@ fun HomeScreen(
                                 modifier = Modifier.padding(bottom = 4.dp)
                             )
 
-                            // Find related TX devices
-                            val receivedTxId = deviceData[address]?.get("ReceivedTxId")
-                            val txDevices = if (receivedTxId != null) {
-                                connectionStates.entries.filter { (txAddress: String, state: String) ->
-                                    state == "Connected" && deviceData[txAddress]?.get("DeviceID") == "UWB_TX_$receivedTxId"
-                                }.map { it.key }
-                            } else {
-                                emptyList()
-                            }
+                            // Find all connected TX devices (Electron devices)
+                            val txDevices = connectionStates.entries.filter { (txAddress, state) ->
+                                state == "Connected" && foundDevices.find { it.address == txAddress }?.name?.startsWith("Electron") == true
+                            }.map { it.key }
 
                             if (txDevices.isEmpty()) {
                                 Text(
@@ -285,7 +282,7 @@ fun HomeScreen(
                                     modifier = Modifier.padding(vertical = 4.dp)
                                 )
                             } else {
-                                Log.d(TAG, "Found ${txDevices.size} related TX devices for RX $address: $txDevices")
+                                Log.d(TAG, "Found ${txDevices.size} TX devices for RX $address: $txDevices")
                                 LazyColumn(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -295,9 +292,22 @@ fun HomeScreen(
                                         val txDevice = foundDevices.find { it.address == txAddress }
                                         val txDeviceId = deviceData[txAddress]?.get("DeviceID")
                                         val txName = txDevice?.name ?: txDeviceId ?: "Unknown Transmitter"
-                                        val displayTxName = "$txName (TX)"
-                                        val distance = deviceData[txAddress]?.get("Distance") ?: "No distance"
-                                        val distanceValue = tagDataMap[txAddress]?.distance ?: 0.0
+                                        val displayTxName = if (isAdvancedMode.value) "$txName (TX)" else txName
+
+                                        // Check if TX is related to RX
+                                        val receivedTxId = deviceData[address]?.get("ReceivedTxId")
+                                        val isRelated = receivedTxId != null && txDeviceId == "UWB_TX_$receivedTxId"
+                                        val displayText = if (isRelated) {
+                                            deviceData[txAddress]?.get("Distance") ?: "No distance"
+                                        } else {
+                                            "Loading"
+                                        }
+
+                                        val distanceValue = if (isRelated) {
+                                            tagDataMap[txAddress]?.distance ?: 0.0
+                                        } else {
+                                            0.0 // Default for Loading state
+                                        }
                                         val fraction = (distanceValue / 700.0).coerceIn(0.0, 1.0).toFloat()
                                         val greyishRed = Color(0xFF7A1515)
                                         val greyishBlue = Color(0xFF2C2C62)
@@ -318,7 +328,7 @@ fun HomeScreen(
                                                 horizontalArrangement = Arrangement.SpaceBetween
                                             ) {
                                                 Text(text = displayTxName, fontSize = 14.sp)
-                                                Text(text = distance, fontSize = 14.sp)
+                                                Text(text = displayText, fontSize = 14.sp)
                                             }
                                         }
 
@@ -330,7 +340,7 @@ fun HomeScreen(
                                         txData.entries.forEach { (key, value) ->
                                             when (key) {
                                                 "Battery" -> txDetails.add("Battery: $value")
-                                                "Distance" -> txDetails.add("Distance: $value")
+                                                "Distance" -> if (isRelated) txDetails.add("Distance: $value")
                                                 "DeviceID" -> if (isAdvancedMode.value) txDetails.add("Device ID: $value")
                                                 "RSSI" -> {
                                                     val rssiValue = value.removeSuffix(" dBm").toIntOrNull() ?: 0
