@@ -66,18 +66,19 @@ class TrackerViewModel @Inject constructor(
         }
     }
 
-    fun getTrackerByBleId(bleId: String) {
-        viewModelScope.launch {
-            _isLoading.value = true
-            try {
-                _selectedTracker.value = trackerRepository.getTrackerByBleId(bleId)
-                _errorMessage.value = null
-            } catch (e: Exception) {
-                _errorMessage.value = "Failed to fetch tracker by BLE ID: ${e.localizedMessage}"
-                _selectedTracker.value = null
-            } finally {
-                _isLoading.value = false
-            }
+    suspend fun getTrackerByBleId(bleId: String): Tracker? {
+        _isLoading.value = true
+        return try {
+            val tracker = trackerRepository.getTrackerByBleId(bleId)
+            _selectedTracker.value = tracker
+            _errorMessage.value = null
+            tracker
+        } catch (e: Exception) {
+            _errorMessage.value = "Failed to fetch tracker by BLE ID: ${e.localizedMessage}"
+            _selectedTracker.value = null
+            null
+        } finally {
+            _isLoading.value = false
         }
     }
 

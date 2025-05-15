@@ -359,17 +359,17 @@ fun DeviceItem(
                         return@launch
                     }
 
-                    trackerViewModel.getTrackerByBleId(device.address)
-                    if (selectedTracker == null) {
+                    val tracker = trackerViewModel.getTrackerByBleId(device.address)
+                    if (tracker == null) {
                         Log.w("CardConnectionScreen", "No tracker found for ble_id: ${device.address}")
                         setConnectionError("This tracker doesn’t belong to you")
                         return@launch
                     }
 
                     val authorized = listOfNotNull(
-                        selectedTracker.user1,
-                        selectedTracker.user2,
-                        selectedTracker.user3
+                        tracker.user1,
+                        tracker.user2,
+                        tracker.user3
                     ).contains(userId)
 
                     if (authorized) {
