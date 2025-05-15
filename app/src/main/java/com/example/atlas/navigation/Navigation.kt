@@ -90,7 +90,9 @@ fun AppNavHost(
         composable("profile") {
             ProfileScreen(
                 navController = navController,
-                isAdvancedMode = isAdvancedMode
+                isAdvancedMode = isAdvancedMode,
+                connectionStates = connectionStates,
+                onDisconnect = onDisconnect
             )
         }
         composable("settings") {

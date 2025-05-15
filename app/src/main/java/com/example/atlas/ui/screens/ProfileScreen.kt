@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -20,6 +21,8 @@ import com.example.atlas.ui.viewmodel.UserViewModel
 fun ProfileScreen(
     navController: NavHostController,
     isAdvancedMode: MutableState<Boolean>,
+    connectionStates: SnapshotStateMap<String, String>,
+    onDisconnect: (String) -> Unit,
     userViewModel: UserViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -105,7 +108,12 @@ fun ProfileScreen(
             // Log Off Button
             Button(
                 onClick = {
-                    Log.d("ProfileScreen", "Logging out user")
+                    Log.d("ProfileScreen", "Logging out user and disconnecting BLE devices")
+                    // Disconnect all connected BLE devices
+                    connectionStates.filter { it.value == "Connected" }.keys.forEach { address ->
+                        Log.d("ProfileScreen", "Disconnecting device: $address")
+                        onDisconnect(address)
+                    }
                     userViewModel.logout(context)
                     navController.navigate("logIn") {
                         popUpTo(navController.graph.startDestinationId) { inclusive = true }
