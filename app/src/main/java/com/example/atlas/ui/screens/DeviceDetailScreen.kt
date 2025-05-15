@@ -139,14 +139,12 @@ fun DeviceDetailScreen(
                                 text = "Status: $connectionStatus",
                                 style = MaterialTheme.typography.bodyMedium
                             )
-                            Text(
-                                text = "Distance: $distance",
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                            Text(
-                                text = "Battery: $battery",
-                                style = MaterialTheme.typography.bodyMedium
-                            )
+                            if (tracker.type != "Proton") {
+                                Text(
+                                    text = "Distance: $distance",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            }
                             tracker.last_connection?.let {
                                 Text(
                                     text = "Last Connection: $it",
