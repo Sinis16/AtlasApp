@@ -1,6 +1,8 @@
 package com.example.atlas.ui.screens
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -10,6 +12,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.example.atlas.models.TagData
+import com.example.atlas.models.User
 import com.example.atlas.ui.viewmodel.TrackerViewModel
 import com.example.atlas.ui.viewmodel.UserViewModel
 import androidx.compose.runtime.snapshots.SnapshotStateMap
@@ -36,9 +39,31 @@ fun DeviceDetailScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     var showAddFamilyDialog by remember { mutableStateOf(false) }
     var familyEmail by remember { mutableStateOf("") }
+    var showDeleteFamilyDialog by remember { mutableStateOf(false) }
+    var selectedUserId by remember { mutableStateOf<String?>(null) }
+    var familyMembers by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
 
     LaunchedEffect(bleId) {
         trackerViewModel.getTrackerByBleId(bleId)
+    }
+
+    // Fetch family member names when opening Delete Family dialog
+    LaunchedEffect(showDeleteFamilyDialog, tracker) {
+        if (showDeleteFamilyDialog && tracker != null) {
+            val members = mutableListOf<Pair<String, String>>()
+            tracker!!.user2?.let { id ->
+                userViewModel.findUserById(id)?.let { user ->
+                    members.add((id to user.name) as Pair<String, String>)
+                }
+            }
+            tracker!!.user3?.let { id ->
+                userViewModel.findUserById(id)?.let { user ->
+                    members.add((id to user.name) as Pair<String, String>)
+                }
+            }
+            familyMembers = members
+            selectedUserId = null // Reset selection
+        }
     }
 
     Scaffold(
@@ -139,13 +164,9 @@ fun DeviceDetailScreen(
                             Text("Add Family")
                         }
                         Button(
-                            onClick = {
-                                // TODO: Implement Delete Family
-                                coroutineScope.launch {
-                                    snackbarHostState.showSnackbar("Delete Family: TODO")
-                                }
-                            },
-                            modifier = Modifier.weight(1f)
+                            onClick = { showDeleteFamilyDialog = true },
+                            modifier = Modifier.weight(1f),
+                            enabled = tracker.user2 != null || tracker.user3 != null
                         ) {
                             Text("Delete Family")
                         }
@@ -247,6 +268,89 @@ fun DeviceDetailScreen(
                         onClick = {
                             showAddFamilyDialog = false
                             familyEmail = ""
+                        }
+                    ) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+
+        // Delete Family Dialog
+        if (showDeleteFamilyDialog) {
+            AlertDialog(
+                onDismissRequest = {
+                    showDeleteFamilyDialog = false
+                    selectedUserId = null
+                    familyMembers = emptyList()
+                },
+                title = { Text("Delete Family Member") },
+                text = {
+                    if (familyMembers.isEmpty()) {
+                        Text("No family members found.")
+                    } else {
+                        Column {
+                            Text("Select a family member to remove:")
+                            Spacer(modifier = Modifier.height(8.dp))
+                            LazyColumn(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 150.dp)
+                            ) {
+                                items(familyMembers) { (id, name) ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        RadioButton(
+                                            selected = selectedUserId == id,
+                                            onClick = { selectedUserId = id }
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(name)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            tracker?.let { currentTracker ->
+                                if (selectedUserId == null) {
+                                    coroutineScope.launch {
+                                        snackbarHostState.showSnackbar("Please select a family member")
+                                    }
+                                    return@TextButton
+                                }
+                                coroutineScope.launch {
+                                    val updatedTracker = when (selectedUserId) {
+                                        currentTracker.user2 -> currentTracker.copy(user2 = null)
+                                        currentTracker.user3 -> currentTracker.copy(user3 = null)
+                                        else -> currentTracker
+                                    }
+                                    trackerViewModel.updateTracker(updatedTracker)
+                                    snackbarHostState.showSnackbar("Family member removed successfully")
+                                    showDeleteFamilyDialog = false
+                                    selectedUserId = null
+                                    familyMembers = emptyList()
+                                }
+                            }
+                        },
+                        enabled = familyMembers.isNotEmpty() && selectedUserId != null
+                    ) {
+                        Text("Delete")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            showDeleteFamilyDialog = false
+                            selectedUserId = null
+                            familyMembers = emptyList()
                         }
                     ) {
                         Text("Cancel")

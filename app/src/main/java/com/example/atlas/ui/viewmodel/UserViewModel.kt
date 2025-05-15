@@ -145,6 +145,10 @@ class UserViewModel @Inject constructor(
         return userRepository.findUserByEmail(email)
     }
 
+    suspend fun findUserById(id: String): User?  {
+        return userRepository.findUserById(id)
+    }
+
     fun signUpWithEmail(name: String, email: String, password: String, onResult: (Boolean, String?) -> Unit = { _, _ -> }) {
         Log.d("UserViewModel", "Starting email sign-up for email: $email, name: $name, password length: ${password.length}")
         viewModelScope.launch {

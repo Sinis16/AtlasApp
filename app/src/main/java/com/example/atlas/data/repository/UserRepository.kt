@@ -441,6 +441,19 @@ class UserRepository @Inject constructor(
         }
     }
 
+    suspend fun findUserById(id: String): User? = withContext(Dispatchers.IO) {
+        try {
+            val result = supabaseClient.from("clients")
+                .select {
+                    filter { eq("id", id) }
+                }
+                .decodeSingleOrNull<User>()
+            result
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     suspend fun signInHELP(): Boolean {
         return try {
             supabaseClient.auth.signInWith(Github)
