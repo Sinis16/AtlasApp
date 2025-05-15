@@ -12,7 +12,6 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.example.atlas.models.TagData
-import com.example.atlas.models.User
 import com.example.atlas.ui.viewmodel.TrackerViewModel
 import com.example.atlas.ui.viewmodel.UserViewModel
 import androidx.compose.runtime.snapshots.SnapshotStateMap
@@ -30,6 +29,7 @@ fun DeviceDetailScreen(
     val trackerViewModel: TrackerViewModel = hiltViewModel()
     val userViewModel: UserViewModel = hiltViewModel()
     val tracker by trackerViewModel.selectedTracker.collectAsState()
+    val errorMessage by trackerViewModel.errorMessage.collectAsState()
     val connectionStatus = connectionStates[bleId] ?: "Disconnected"
     val deviceInfo = deviceData[bleId] ?: emptyMap()
     val distance = deviceInfo["Distance"] ?: "N/A"
@@ -42,6 +42,8 @@ fun DeviceDetailScreen(
     var showDeleteFamilyDialog by remember { mutableStateOf(false) }
     var selectedUserId by remember { mutableStateOf<String?>(null) }
     var familyMembers by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    var showChangeNameDialog by remember { mutableStateOf(false) }
+    var newName by remember { mutableStateOf("") }
 
     LaunchedEffect(bleId) {
         trackerViewModel.getTrackerByBleId(bleId)
@@ -63,6 +65,23 @@ fun DeviceDetailScreen(
             }
             familyMembers = members
             selectedUserId = null // Reset selection
+        }
+    }
+
+    // Initialize newName when opening Change Name dialog
+    LaunchedEffect(showChangeNameDialog, tracker) {
+        if (showChangeNameDialog && tracker != null) {
+            newName = tracker!!.name
+        }
+    }
+
+    // Show error messages from TrackerViewModel
+    LaunchedEffect(errorMessage) {
+        errorMessage?.let { message ->
+            coroutineScope.launch {
+                snackbarHostState.showSnackbar(message)
+                trackerViewModel.clearError()
+            }
         }
     }
 
@@ -149,48 +168,56 @@ fun DeviceDetailScreen(
                         }
                     }
 
-                    // Buttons
+                    // 2x2 Button Grid
                     Spacer(modifier = Modifier.height(16.dp))
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Button(
-                            onClick = { showAddFamilyDialog = true },
-                            modifier = Modifier.weight(1f)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text("Add Family")
+                            Button(
+                                onClick = { showAddFamilyDialog = true },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("Add Family")
+                            }
+                            Button(
+                                onClick = { showDeleteFamilyDialog = true },
+                                modifier = Modifier.weight(1f),
+                                enabled = tracker.user2 != null || tracker.user3 != null
+                            ) {
+                                Text("Delete Family")
+                            }
                         }
-                        Button(
-                            onClick = { showDeleteFamilyDialog = true },
-                            modifier = Modifier.weight(1f),
-                            enabled = tracker.user2 != null || tracker.user3 != null
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text("Delete Family")
-                        }
-                        Button(
-                            onClick = {
-                                // TODO: Implement Change Name
-                                coroutineScope.launch {
-                                    snackbarHostState.showSnackbar("Change Name: TODO")
-                                }
-                            },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("Change Name")
-                        }
-                        Button(
-                            onClick = {
-                                // TODO: Implement Reset Tag
-                                coroutineScope.launch {
-                                    snackbarHostState.showSnackbar("Reset Tag: TODO")
-                                }
-                            },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("Reset Tag")
+                            Button(
+                                onClick = { showChangeNameDialog = true },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("Change Name")
+                            }
+                            Button(
+                                onClick = {
+                                    tracker.id.let { trackerId ->
+                                        coroutineScope.launch {
+                                            trackerViewModel.deleteTracker(trackerId.toString())
+                                            snackbarHostState.showSnackbar("Tag deleted successfully")
+                                            navController.popBackStack()
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("Reset Tag")
+                            }
                         }
                     }
                 } ?: run {
@@ -351,6 +378,64 @@ fun DeviceDetailScreen(
                             showDeleteFamilyDialog = false
                             selectedUserId = null
                             familyMembers = emptyList()
+                        }
+                    ) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+
+        // Change Name Dialog
+        if (showChangeNameDialog) {
+            AlertDialog(
+                onDismissRequest = {
+                    showChangeNameDialog = false
+                    newName = ""
+                },
+                title = { Text("Change Tracker Name") },
+                text = {
+                    Column {
+                        Text("Enter the new name for the tracker:")
+                        Spacer(modifier = Modifier.height(8.dp))
+                        TextField(
+                            value = newName,
+                            onValueChange = { newName = it },
+                            label = { Text("Name") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            tracker?.let { currentTracker ->
+                                if (newName.isBlank()) {
+                                    coroutineScope.launch {
+                                        snackbarHostState.showSnackbar("Name cannot be empty")
+                                    }
+                                    return@TextButton
+                                }
+                                coroutineScope.launch {
+                                    val updatedTracker = currentTracker.copy(name = newName.trim())
+                                    trackerViewModel.updateTracker(updatedTracker)
+                                    snackbarHostState.showSnackbar("Name updated successfully")
+                                    showChangeNameDialog = false
+                                    newName = ""
+                                }
+                            }
+                        },
+                        enabled = newName.isNotBlank()
+                    ) {
+                        Text("Confirm")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            showChangeNameDialog = false
+                            newName = ""
                         }
                     ) {
                         Text("Cancel")

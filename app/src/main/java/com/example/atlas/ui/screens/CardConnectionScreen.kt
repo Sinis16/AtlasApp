@@ -355,14 +355,15 @@ fun DeviceItem(
                     val userId = user?.id
                     if (userId == null) {
                         Log.w("CardConnectionScreen", "No user ID available")
-                        setConnectionError("This tracker doesn’t belong to you")
+                        setConnectionError("Please log in to connect")
                         return@launch
                     }
 
                     val tracker = trackerViewModel.getTrackerByBleId(device.address)
                     if (tracker == null) {
-                        Log.w("CardConnectionScreen", "No tracker found for ble_id: ${device.address}")
-                        setConnectionError("This tracker doesn’t belong to you")
+                        // No tracker found, allow connection to create new tracker
+                        Log.d("CardConnectionScreen", "No tracker found for ble_id: ${device.address}, proceeding to connect")
+                        onConnect(device.address)
                         return@launch
                     }
 
