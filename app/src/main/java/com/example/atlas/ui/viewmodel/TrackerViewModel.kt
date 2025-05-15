@@ -50,6 +50,20 @@ class TrackerViewModel @Inject constructor(
         }
     }
 
+    fun getTrackerByBleId(bleId: String) {
+        viewModelScope.launch {
+            isLoading.value = true
+            try {
+                selectedTracker.value = trackerRepository.getTrackerByBleId(bleId)
+                errorMessage.value = null
+            } catch (e: Exception) {
+                errorMessage.value = "Failed to fetch tracker by BLE ID: ${e.localizedMessage}"
+            } finally {
+                isLoading.value = false
+            }
+        }
+    }
+
     fun addTracker(tracker: Tracker) {
         viewModelScope.launch {
             isLoading.value = true

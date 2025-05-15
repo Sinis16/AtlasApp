@@ -8,7 +8,6 @@ import io.github.jan.supabase.postgrest.query.Columns
 import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -75,6 +74,37 @@ class TrackerRepository @Inject constructor(
         }
     }
 
+    suspend fun getTrackerByBleId(bleId: String): Tracker? = withContext(Dispatchers.IO) {
+        runCatching {
+            val tracker = supabaseClient.from("trackers").select(
+                columns = Columns.list(
+                    "id",
+                    "ble_id",
+                    "name",
+                    "user1",
+                    "user2",
+                    "user3",
+                    "last_connection",
+                    "last_latitude",
+                    "last_longitude",
+                    "type"
+                )
+            ) {
+                filter { eq("ble_id", bleId) }
+            }.decodeSingleOrNull<Tracker>()
+            if (tracker?.id == null) {
+                Log.w("TrackerRepository", "Tracker with ble_id $bleId has null id")
+                null
+            } else {
+                Log.d("TrackerRepository", "Fetched tracker by ble_id: $tracker")
+                tracker
+            }
+        }.getOrElse {
+            Log.e("TrackerRepository", "Error fetching tracker by ble_id: ${it.localizedMessage}", it)
+            null
+        }
+    }
+
     suspend fun getAllTrackers(): List<Tracker> = withContext(Dispatchers.IO) {
         runCatching {
             val trackers = supabaseClient.from("trackers").select()
@@ -89,7 +119,8 @@ class TrackerRepository @Inject constructor(
 
     suspend fun addTracker(tracker: Tracker) = withContext(Dispatchers.IO) {
         runCatching {
-            val validTracker = tracker.copy(id = tracker.id ?: UUID.randomUUID().toString())
+            // Ensure id is null to let Supabase auto-generate it
+            val validTracker = tracker.copy(id = null)
             supabaseClient.from("trackers").insert(validTracker)
             Log.d("TrackerRepository", "Added tracker: $validTracker")
         }.onFailure {

@@ -32,6 +32,7 @@ import com.example.atlas.blescanner.BleScanManager
 import com.example.atlas.blescanner.model.BleDevice
 import com.example.atlas.blescanner.model.BleScanCallback
 import com.example.atlas.models.TagData
+import com.example.atlas.models.Tracker
 import com.example.atlas.navigation.AppNavHost
 import com.example.atlas.permissions.PermissionManager
 import com.example.atlas.ui.components.BottomNavBar
@@ -43,6 +44,8 @@ import com.example.atlas.data.repository.UserRepository
 import com.example.atlas.ui.viewmodel.UserViewModel
 import dagger.hilt.android.AndroidEntryPoint
 import io.github.jan.supabase.SupabaseClient
+import io.github.jan.supabase.postgrest.from
+import kotlinx.coroutines.launch
 import java.nio.ByteBuffer
 import java.util.UUID
 import javax.inject.Inject
@@ -215,7 +218,7 @@ class MainActivity : ComponentActivity() {
                     }
                     if (status == 133 || status == 147) {
                         val retries = connectionRetries.getOrDefault(address, 0) + 1
-                        if (retries < 5) { // Increased from 3 to 5
+                        if (retries < 5) {
                             Log.d(TAG, "Connection error (status=$status) for $address, retrying ($retries/5)")
                             connectionRetries[address] = retries
                             Handler(Looper.getMainLooper()).postDelayed({
@@ -490,7 +493,7 @@ class MainActivity : ComponentActivity() {
                                 }
                                 completeGattOperation()
                             }
-                            Handler(Looper.getMainLooper()).postDelayed(this, 1500) // Increased from 1000ms
+                            Handler(Looper.getMainLooper()).postDelayed(this, 1500)
                         }
                     }
                 }
@@ -562,7 +565,7 @@ class MainActivity : ComponentActivity() {
                                     val distanceMeters = ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.LITTLE_ENDIAN).float
                                     if (distanceMeters.isFinite()) {
                                         val distanceCm = distanceMeters * 100.0
-                                        String.format("%.2f cm", distanceCm)
+                                        String.format("%.2f cm Karabiner", distanceCm)
                                     } else {
                                         "Invalid"
                                     }
@@ -750,7 +753,7 @@ class MainActivity : ComponentActivity() {
                 tagDataMap = remember { mutableStateMapOf<String, TagData>() }
                 connectionStartTimes = remember { mutableMapOf<String, Long>() }
                 lastReadRequestTimes = remember { mutableMapOf<String, Long>() }
-                val updateRate = remember { mutableStateOf(1000L) } // Increased from 500ms
+                val updateRate = remember { mutableStateOf(1000L) }
                 savedDeviceAddress = remember { mutableStateOf(getSharedPreferences("AtlasPrefs", Context.MODE_PRIVATE).getString("connectedDevice", null)) }
 
                 val userViewModel: UserViewModel = hiltViewModel()
@@ -774,6 +777,7 @@ class MainActivity : ComponentActivity() {
                     )
                 }
                 val context = LocalContext.current
+                val scope = rememberCoroutineScope()
 
                 LaunchedEffect(leaveBehindDistance.value, isLeaveBehindEnabled.value, isAdvancedMode.value) {
                     getSharedPreferences("AtlasPrefs", Context.MODE_PRIVATE)
@@ -894,6 +898,44 @@ class MainActivity : ComponentActivity() {
                                         gattConnections[address] = gatt
                                         connectionStates[address] = "Connecting"
                                         Log.d(TAG, "Initiating connection to $address, GATT created")
+
+                                        // Add tracker to Supabase if not already present
+                                        scope.launch {
+                                            try {
+                                                val deviceName = foundDevices.find { it.address == address }?.name ?: "Unknown"
+                                                if (deviceName.startsWith("Proton") || deviceName.startsWith("Electron")) {
+                                                    val user = userRepository.getCurrentUser()
+                                                    if (user?.id == null) {
+                                                        Log.w(TAG, "No user logged in, skipping tracker creation for $address")
+                                                        return@launch
+                                                    }
+                                                    // Check if tracker exists
+                                                    val existingTrackers = supabaseClient.from("trackers")
+                                                        .select { filter { eq("ble_id", address) } }
+                                                        .decodeList<Tracker>()
+                                                    if (existingTrackers.isEmpty()) {
+                                                        // Create new tracker
+                                                        val tracker = Tracker(
+                                                            ble_id = address,
+                                                            name = deviceName,
+                                                            user1 = user.id,
+                                                            user2 = null,
+                                                            user3 = null,
+                                                            last_connection = null,
+                                                            last_latitude = null,
+                                                            last_longitude = null,
+                                                            type = if (deviceName.startsWith("Proton")) "Proton" else "Electron"
+                                                        )
+                                                        supabaseClient.from("trackers").insert(tracker)
+                                                        Log.d(TAG, "Added new tracker for $address: $tracker")
+                                                    } else {
+                                                        Log.d(TAG, "Tracker already exists for $address")
+                                                    }
+                                                }
+                                            } catch (e: Exception) {
+                                                Log.e(TAG, "Failed to add tracker for $address: ${e.message}")
+                                            }
+                                        }
                                     } else {
                                         Log.w(TAG, "Device null or already connected: $address")
                                     }
