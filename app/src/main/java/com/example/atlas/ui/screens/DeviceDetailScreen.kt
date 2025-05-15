@@ -23,8 +23,7 @@ fun DeviceDetailScreen(
     modifier: Modifier = Modifier
 ) {
     val trackerViewModel: TrackerViewModel = hiltViewModel()
-    val tracker by trackerViewModel.selectedTracker // State<Tracker?>
-
+    val tracker by trackerViewModel.selectedTracker.collectAsState()
     val connectionStatus = connectionStates[bleId] ?: "Disconnected"
     val deviceInfo = deviceData[bleId] ?: emptyMap()
     val distance = deviceInfo["Distance"] ?: "N/A"
@@ -91,21 +90,21 @@ fun DeviceDetailScreen(
                             text = "Battery: $battery",
                             style = MaterialTheme.typography.bodyMedium
                         )
-                        tracker.last_connection?.let { lastConnection ->
+                        tracker.last_connection?.let {
                             Text(
-                                text = "Last Connection: $lastConnection",
+                                text = "Last Connection: $it",
                                 style = MaterialTheme.typography.bodyMedium
                             )
                         }
-                        tracker.last_latitude?.let { latitude ->
+                        tracker.last_connection?.let {
                             Text(
-                                text = "Last Latitude: $latitude",
+                                text = "Last latitude: $tracker.last_latitude",
                                 style = MaterialTheme.typography.bodyMedium
                             )
                         }
-                        tracker.last_longitude?.let { longitude ->
+                        tracker.last_connection?.let {
                             Text(
-                                text = "Last Longitude: $longitude",
+                                text = "Last longitude: ${tracker.last_longitude}",
                                 style = MaterialTheme.typography.bodyMedium
                             )
                         }

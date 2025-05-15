@@ -339,21 +339,7 @@ fun HomeScreen(
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
                                                 Text(text = displayTxName, fontSize = 14.sp)
-                                                Row(
-                                                    horizontalArrangement = Arrangement.End
-                                                ) {
-                                                    Text(text = displayText, fontSize = 14.sp)
-                                                    Spacer(modifier = Modifier.width(8.dp))
-                                                    Button(
-                                                        onClick = {
-                                                            navController.navigate("deviceDetail/$txAddress")
-                                                            Log.d(TAG, "Navigating to DeviceDetailScreen for TX address: $txAddress")
-                                                        },
-                                                        modifier = Modifier.size(width = 100.dp, height = 36.dp)
-                                                    ) {
-                                                        Text("Details")
-                                                    }
-                                                }
+                                                Text(text = displayText, fontSize = 14.sp)
                                             }
                                         }
 
@@ -413,18 +399,33 @@ fun HomeScreen(
                                         }
 
                                         Spacer(modifier = Modifier.height(4.dp))
-                                        Button(
-                                            onClick = {
-                                                txTagId?.let { id ->
-                                                    navController.navigate("tag/$id")
-                                                    Log.d(TAG, "Navigating to TagScreen for TX tagId: $id")
-                                                }
-                                            },
+                                        Row(
                                             modifier = Modifier
-                                                .align(Alignment.End)
-                                                .padding(end = 8.dp)
+                                                .fillMaxWidth()
+                                                .padding(end = 8.dp),
+                                            horizontalArrangement = Arrangement.End
                                         ) {
-                                            Text("Buscar")
+                                            Button(
+                                                onClick = {
+                                                    navController.navigate("deviceDetail/$txAddress")
+                                                    Log.d(TAG, "Navigating to DeviceDetailScreen for TX address: $txAddress")
+                                                },
+                                                modifier = Modifier.size(width = 100.dp, height = 36.dp)
+                                            ) {
+                                                Text("Details")
+                                            }
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Button(
+                                                onClick = {
+                                                    txTagId?.let { id ->
+                                                        navController.navigate("tag/$id")
+                                                        Log.d(TAG, "Navigating to TagScreen for TX tagId: $id")
+                                                    }
+                                                },
+                                                modifier = Modifier.size(width = 100.dp, height = 36.dp)
+                                            ) {
+                                                Text("Buscar")
+                                            }
                                         }
                                     }
                                 }

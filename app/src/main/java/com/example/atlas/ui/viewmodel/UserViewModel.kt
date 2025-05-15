@@ -37,6 +37,13 @@ class UserViewModel @Inject constructor(
         private const val KEY_USER_ID = "user_id"
     }
 
+    init {
+        viewModelScope.launch {
+            Log.d("UserViewModel", "Initializing UserViewModel, loading user client info")
+            loadUserClientInfo()
+        }
+    }
+
     suspend fun loadUserAuthInfo(): User? {
         Log.d("UserViewModel", "Fetching user auth data...")
         try {
@@ -76,13 +83,15 @@ class UserViewModel @Inject constructor(
                 sharedPreferences.edit().putString(KEY_USER_ID, userData.id).apply()
                 sharedPreferences.edit().putString("${userData.id}_name", userData.name).apply()
                 Log.d("UserViewModel", "Saved user ID to SharedPreferences: ${userData.id}")
+            } else {
+                Log.w("UserViewModel", "No client data found, clearing SharedPreferences")
+                sharedPreferences.edit().remove(KEY_USER_ID).apply()
             }
 
             return userData
         } catch (e: Exception) {
             Log.e("UserViewModel", "Error loading user client: ${e.localizedMessage}", e)
             _error.value = "Error al cargar usuario: ${e.localizedMessage}"
-            _user.value = null
             return null
         }
     }

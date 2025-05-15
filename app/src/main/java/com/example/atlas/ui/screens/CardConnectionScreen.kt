@@ -2,7 +2,6 @@ package com.example.atlas.ui.screens
 
 import android.annotation.SuppressLint
 import android.os.Build
-import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -15,16 +14,25 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import com.example.atlas.MainActivity
 import com.example.atlas.blescanner.BleScanManager
 import com.example.atlas.blescanner.model.BleDevice
+import com.example.atlas.models.Tracker
+import com.example.atlas.models.User
 import com.example.atlas.permissions.PermissionManager
 import com.example.atlas.permissions.dispatcher.dsl.checkPermissions
 import com.example.atlas.permissions.dispatcher.dsl.doOnDenied
 import com.example.atlas.permissions.dispatcher.dsl.doOnGranted
 import com.example.atlas.permissions.dispatcher.dsl.rationale
 import com.example.atlas.permissions.dispatcher.dsl.withRequestCode
+import com.example.atlas.ui.viewmodel.TrackerViewModel
+import com.example.atlas.ui.viewmodel.UserViewModel
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
+import android.util.Log
 
 @SuppressLint("UnrememberedMutableState")
 @RequiresApi(Build.VERSION_CODES.S)
@@ -37,12 +45,36 @@ fun CardConnectionScreen(
     connectionStates: SnapshotStateMap<String, String>,
     savedDeviceAddress: MutableState<String?>,
     onConnect: (String) -> Unit,
-    onDisconnect: (String) -> Unit
+    onDisconnect: (String) -> Unit,
+    trackerViewModel: TrackerViewModel = hiltViewModel(),
+    userViewModel: UserViewModel = hiltViewModel()
 ) {
     var isScanning by remember { mutableStateOf(false) }
     var showRationaleDialog by remember { mutableStateOf(false) }
     var rationaleMessage by remember { mutableStateOf("") }
     var connectionError by remember { mutableStateOf<String?>(null) }
+    val user by userViewModel.user.collectAsStateWithLifecycle()
+    val isAuthenticated by userViewModel.isAuthenticated.collectAsStateWithLifecycle()
+    val selectedTracker by trackerViewModel.selectedTracker.collectAsStateWithLifecycle()
+    val coroutineScope = rememberCoroutineScope()
+
+    // Check session on entry
+    LaunchedEffect(Unit) {
+        Log.d("CardConnectionScreen", "Initial isAuthenticated: $isAuthenticated")
+        try {
+            val hasSession = userViewModel.checkUserSession()
+            Log.d("CardConnectionScreen", "Session check result: hasSession=$hasSession")
+            if (!hasSession) {
+                Log.d("CardConnectionScreen", "No active session, navigating to logIn")
+                navController.navigate("logIn") {
+                    popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                    launchSingleTop = true
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("CardConnectionScreen", "Error checking session: ${e.localizedMessage}", e)
+        }
+    }
 
     // Track if a Proton device is connected
     val isProtonConnected by derivedStateOf {
@@ -132,7 +164,7 @@ fun CardConnectionScreen(
         Button(
             onClick = {
                 if (!isScanning) {
-                    permissionManager checkRequestAndDispatch 1
+                    permissionManager.checkRequestAndDispatch(1)
                     connectionError = null
                 }
             },
@@ -192,10 +224,12 @@ fun CardConnectionScreen(
                         device = device,
                         connectionState = connectionStates[device.address] ?: "Disconnected",
                         isSavedDevice = device.address == savedDeviceAddress.value,
-                        onConnect = { address ->
-                            connectionError = null
-                            onConnect(address)
-                        }
+                        user = user,
+                        selectedTracker = selectedTracker,
+                        trackerViewModel = trackerViewModel,
+                        coroutineScope = coroutineScope,
+                        setConnectionError = { connectionError = it },
+                        onConnect = onConnect
                     )
                 }
             }
@@ -230,10 +264,12 @@ fun CardConnectionScreen(
                             device = device,
                             connectionState = connectionStates[device.address] ?: "Disconnected",
                             isSavedDevice = device.address == savedDeviceAddress.value,
-                            onConnect = { address ->
-                                connectionError = null
-                                onConnect(address)
-                            }
+                            user = user,
+                            selectedTracker = selectedTracker,
+                            trackerViewModel = trackerViewModel,
+                            coroutineScope = coroutineScope,
+                            setConnectionError = { connectionError = it },
+                            onConnect = onConnect
                         )
                     }
                 }
@@ -280,6 +316,11 @@ fun DeviceItem(
     device: BleDevice,
     connectionState: String,
     isSavedDevice: Boolean,
+    user: User?,
+    selectedTracker: Tracker?,
+    trackerViewModel: TrackerViewModel,
+    coroutineScope: CoroutineScope,
+    setConnectionError: (String) -> Unit,
     onConnect: (String) -> Unit
 ) {
     Row(
@@ -309,7 +350,37 @@ fun DeviceItem(
             )
         }
         Button(
-            onClick = { onConnect(device.address) },
+            onClick = {
+                coroutineScope.launch {
+                    val userId = user?.id
+                    if (userId == null) {
+                        Log.w("CardConnectionScreen", "No user ID available")
+                        setConnectionError("This tracker doesn’t belong to you")
+                        return@launch
+                    }
+
+                    trackerViewModel.getTrackerByBleId(device.address)
+                    if (selectedTracker == null) {
+                        Log.w("CardConnectionScreen", "No tracker found for ble_id: ${device.address}")
+                        setConnectionError("This tracker doesn’t belong to you")
+                        return@launch
+                    }
+
+                    val authorized = listOfNotNull(
+                        selectedTracker.user1,
+                        selectedTracker.user2,
+                        selectedTracker.user3
+                    ).contains(userId)
+
+                    if (authorized) {
+                        Log.d("CardConnectionScreen", "User $userId authorized for tracker ${device.address}, connecting")
+                        onConnect(device.address)
+                    } else {
+                        Log.w("CardConnectionScreen", "User $userId not authorized for tracker ${device.address}")
+                        setConnectionError("This tracker doesn’t belong to you")
+                    }
+                }
+            },
             enabled = connectionState != "Connecting" && connectionState != "Connected"
         ) {
             Text("Connect")
