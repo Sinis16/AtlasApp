@@ -108,19 +108,10 @@ fun CardConnectionScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Row {
-                        Text(
-                            text = address,
-                            fontSize = 14.sp
-                        )
-                        foundDevices.find { it.address == address }?.name?.let { name ->
-                            Text(
-                                text = " ($name)",
-                                fontSize = 14.sp,
-                                modifier = Modifier.padding(start = 4.dp)
-                            )
-                        }
-                    }
+                    Text(
+                        text = foundDevices.find { it.address == address }?.name ?: "Unknown Device",
+                        fontSize = 14.sp
+                    )
                     Button(
                         onClick = { onDisconnect(address) },
                         modifier = Modifier.size(width = 100.dp, height = 36.dp)
@@ -156,25 +147,47 @@ fun CardConnectionScreen(
             Text(
                 text = "Last Connected Device: $address",
                 fontSize = 16.sp,
-                modifier = Modifier.padding(top = 8.dp)
+                modifier = Modifier.padding(top = 8.dp, bottom = 8.dp)
             )
         }
 
-        // Filter devices to show only Proton and Electron (Electron only if Proton is connected)
-        val filteredDevices = foundDevices.filter { device ->
+        // Filter devices into Proton and Electron lists
+        val protonDevices = foundDevices.filter { device ->
             device.name != null &&
                     device.name != "Unknown" &&
-                    (device.name.startsWith("Proton") ||
-                            (device.name.startsWith("Electron") && isProtonConnected))
+                    device.name.startsWith("Proton")
+        }
+        val electronDevices = foundDevices.filter { device ->
+            device.name != null &&
+                    device.name != "Unknown" &&
+                    device.name.startsWith("Electron") &&
+                    isProtonConnected
         }
 
-        if (filteredDevices.isEmpty()) {
-            Text(text = "No devices found", fontSize = 16.sp, modifier = Modifier.padding(top = 8.dp))
+        // Detected Protons section
+        Text(
+            text = "Detected Protons:",
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp, bottom = 8.dp)
+        )
+        if (protonDevices.isEmpty()) {
+            Text(
+                text = "No Proton devices found",
+                fontSize = 14.sp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp)
+            )
         } else {
             LazyColumn(
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 200.dp) // Limit height to make it scrollable
             ) {
-                items(filteredDevices) { device ->
+                items(protonDevices) { device ->
                     DeviceItem(
                         device = device,
                         connectionState = connectionStates[device.address] ?: "Disconnected",
@@ -184,6 +197,45 @@ fun CardConnectionScreen(
                             onConnect(address)
                         }
                     )
+                }
+            }
+        }
+
+        // Detected Electrons section (only if Proton is connected)
+        if (isProtonConnected) {
+            Text(
+                text = "Detected Electrons:",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 16.dp, bottom = 8.dp)
+            )
+            if (electronDevices.isEmpty()) {
+                Text(
+                    text = "No Electron devices found",
+                    fontSize = 14.sp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp)
+                )
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 200.dp) // Limit height to make it scrollable
+                ) {
+                    items(electronDevices) { device ->
+                        DeviceItem(
+                            device = device,
+                            connectionState = connectionStates[device.address] ?: "Disconnected",
+                            isSavedDevice = device.address == savedDeviceAddress.value,
+                            onConnect = { address ->
+                                connectionError = null
+                                onConnect(address)
+                            }
+                        )
+                    }
                 }
             }
         }
