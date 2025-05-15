@@ -173,9 +173,7 @@ fun RegisterScreen(
                     !acceptTerms -> {
                         errorMessage = "Please accept the terms and conditions"
                     }
-                    !email.endsWith("@uniandes.edu.co") -> {
-                        errorMessage = "Email must end with @uniandes.edu.co"
-                    }
+
                     else -> {
                         isLoading = true
                         // Derive name from email (part before @)
