@@ -1,5 +1,6 @@
 package com.example.atlas.ui.screens
 
+import android.util.Log
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -47,6 +48,13 @@ fun DeviceDetailScreen(
 
     LaunchedEffect(bleId) {
         trackerViewModel.getTrackerByBleId(bleId)
+    }
+
+    // Log tracker name
+    LaunchedEffect(tracker) {
+        tracker?.let {
+            Log.d("DeviceDetailScreen", "Tracker BLE ID: ${it.ble_id}, Name: ${it.name}")
+        }
     }
 
     // Fetch family member names when opening Delete Family dialog

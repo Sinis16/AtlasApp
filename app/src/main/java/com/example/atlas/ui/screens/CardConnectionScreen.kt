@@ -55,8 +55,22 @@ fun CardConnectionScreen(
     var connectionError by remember { mutableStateOf<String?>(null) }
     val user by userViewModel.user.collectAsStateWithLifecycle()
     val isAuthenticated by userViewModel.isAuthenticated.collectAsStateWithLifecycle()
-    val selectedTracker by trackerViewModel.selectedTracker.collectAsStateWithLifecycle()
     val coroutineScope = rememberCoroutineScope()
+
+    // Fetch trackers for all found devices
+    val deviceAddresses = foundDevices.map { it.address }
+    val trackers by trackerViewModel.getTrackersByBleIds(deviceAddresses)
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+    val trackerMap by remember(trackers) {
+        derivedStateOf { trackers.associateBy { it.ble_id } }
+    }
+
+    // Log tracker names
+    LaunchedEffect(trackers) {
+        trackers.forEach { tracker ->
+            Log.d("CardConnectionScreen", "Tracker BLE ID: ${tracker.ble_id}, Name: ${tracker.name}")
+        }
+    }
 
     // Check session on entry
     LaunchedEffect(Unit) {
@@ -133,6 +147,9 @@ fun CardConnectionScreen(
                 modifier = Modifier.padding(bottom = 8.dp)
             )
             connectedDevices.forEach { address ->
+                val device = foundDevices.find { it.address == address }
+                val tracker = trackerMap[address]
+                val displayName = tracker?.name ?: device?.name ?: "Unknown Device"
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -141,7 +158,7 @@ fun CardConnectionScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = foundDevices.find { it.address == address }?.name ?: "Unknown Device",
+                        text = displayName,
                         fontSize = 14.sp
                     )
                     Button(
@@ -217,7 +234,7 @@ fun CardConnectionScreen(
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 200.dp) // Limit height to make it scrollable
+                    .heightIn(max = 200.dp)
             ) {
                 items(protonDevices) { device ->
                     DeviceItem(
@@ -225,7 +242,7 @@ fun CardConnectionScreen(
                         connectionState = connectionStates[device.address] ?: "Disconnected",
                         isSavedDevice = device.address == savedDeviceAddress.value,
                         user = user,
-                        selectedTracker = selectedTracker,
+                        trackerMap = trackerMap,
                         trackerViewModel = trackerViewModel,
                         coroutineScope = coroutineScope,
                         setConnectionError = { connectionError = it },
@@ -257,7 +274,7 @@ fun CardConnectionScreen(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 200.dp) // Limit height to make it scrollable
+                        .heightIn(max = 200.dp)
                 ) {
                     items(electronDevices) { device ->
                         DeviceItem(
@@ -265,7 +282,7 @@ fun CardConnectionScreen(
                             connectionState = connectionStates[device.address] ?: "Disconnected",
                             isSavedDevice = device.address == savedDeviceAddress.value,
                             user = user,
-                            selectedTracker = selectedTracker,
+                            trackerMap = trackerMap,
                             trackerViewModel = trackerViewModel,
                             coroutineScope = coroutineScope,
                             setConnectionError = { connectionError = it },
@@ -299,7 +316,6 @@ fun CardConnectionScreen(
         bleScanManager.afterScanActions.clear()
         bleScanManager.beforeScanActions.add {
             isScanning = true
-            // Retain connected devices in foundDevices
             val connectedAddresses = connectionStates.filter { it.value == "Connected" }.keys
             foundDevices.retainAll { device -> connectedAddresses.contains(device.address) }
             Log.d("CardConnectionScreen", "Scan started, retained connected devices: $connectedAddresses")
@@ -317,7 +333,7 @@ fun DeviceItem(
     connectionState: String,
     isSavedDevice: Boolean,
     user: User?,
-    selectedTracker: Tracker?,
+    trackerMap: Map<String, Tracker>,
     trackerViewModel: TrackerViewModel,
     coroutineScope: CoroutineScope,
     setConnectionError: (String) -> Unit,
@@ -331,8 +347,9 @@ fun DeviceItem(
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Column {
+            val displayName = trackerMap[device.address]?.name ?: device.name ?: "Unknown"
             Text(
-                text = device.name ?: "Unknown",
+                text = displayName,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Bold
             )
@@ -359,9 +376,9 @@ fun DeviceItem(
                         return@launch
                     }
 
-                    val tracker = trackerViewModel.getTrackerByBleId(device.address)
+                    trackerViewModel.getTrackerByBleId(device.address)
+                    val tracker = trackerViewModel.selectedTracker.value
                     if (tracker == null) {
-                        // No tracker found, allow connection to create new tracker
                         Log.d("CardConnectionScreen", "No tracker found for ble_id: ${device.address}, proceeding to connect")
                         onConnect(device.address)
                         return@launch

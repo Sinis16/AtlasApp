@@ -7,6 +7,9 @@ import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Columns
 import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -119,6 +122,25 @@ class TrackerRepository @Inject constructor(
             null
         }
     }
+
+    fun getTrackersByBleIds(bleIds: List<String>): Flow<List<Tracker>> = flow {
+        if (bleIds.isNotEmpty()) {
+            try {
+                val trackers = supabaseClient.from("trackers")
+                    .select {
+                        filter {
+                            isIn("ble_id", bleIds)
+                        }
+                    }
+                    .decodeList<Tracker>()
+                emit(trackers)
+            } catch (e: Exception) {
+                emit(emptyList())
+            }
+        } else {
+            emit(emptyList())
+        }
+    }.flowOn(Dispatchers.IO)
 
     suspend fun getAllTrackers(): List<Tracker> = withContext(Dispatchers.IO) {
         runCatching {

@@ -25,9 +25,12 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.core.app.ActivityCompat
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import com.example.atlas.blescanner.model.BleDevice
 import com.example.atlas.models.TagData
+import com.example.atlas.models.Tracker
+import com.example.atlas.ui.viewmodel.TrackerViewModel
 import com.example.atlas.ui.viewmodel.UserViewModel
 import kotlinx.coroutines.delay
 import java.util.UUID
@@ -49,11 +52,27 @@ fun HomeScreen(
     leaveBehindDistance: MutableState<Long>,
     isLeaveBehindEnabled: MutableState<Boolean>,
     isAdvancedMode: MutableState<Boolean>,
-    viewModel: UserViewModel = hiltViewModel()
+    userViewModel: UserViewModel = hiltViewModel(),
+    trackerViewModel: TrackerViewModel = hiltViewModel()
 ) {
     var selectedDeviceAddress by remember { mutableStateOf<String?>(null) }
     var notificationDeviceAddress by remember { mutableStateOf<String?>(null) }
     val notificationState = remember { mutableStateMapOf<String, NotificationStatus>() }
+
+    // Fetch trackers for all connected devices
+    val connectedAddresses = connectionStates.filter { it.value == "Connected" }.keys.toList()
+    val trackers by trackerViewModel.getTrackersByBleIds(connectedAddresses)
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+    val trackerMap by remember(trackers) {
+        derivedStateOf { trackers.associateBy { it.ble_id } }
+    }
+
+    // Log tracker names
+    LaunchedEffect(trackers) {
+        trackers.forEach { tracker ->
+            Log.d(TAG, "Tracker BLE ID: ${tracker.ble_id}, Name: ${tracker.name}")
+        }
+    }
 
     val BATTERY_SERVICE_UUID = UUID.fromString("0000180F-0000-1000-8000-00805F9B34FB")
     val BATTERY_LEVEL_UUID = UUID.fromString("00002A19-0000-1000-8000-00805F9B34FB")
@@ -61,7 +80,7 @@ fun HomeScreen(
     LaunchedEffect(Unit) {
         Log.d(TAG, "Checking user session")
         try {
-            val hasSession = viewModel.checkUserSession()
+            val hasSession = userViewModel.checkUserSession()
             if (!hasSession) {
                 Log.d(TAG, "No active session, navigating to logIn")
                 navController.navigate("logIn") {
@@ -70,7 +89,7 @@ fun HomeScreen(
                 }
             } else {
                 Log.d(TAG, "Triggering loadUserClientInfo")
-                viewModel.loadUserClientInfo()
+                userViewModel.loadUserClientInfo()
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error checking session or loading user client info: ${e.localizedMessage}", e)
@@ -176,7 +195,8 @@ fun HomeScreen(
                 items(rxDevices) { address ->
                     val device = foundDevices.find { it.address == address }
                     val deviceId = deviceData[address]?.get("DeviceID")
-                    val name = device?.name ?: deviceId ?: "Unknown Receiver"
+                    val tracker = trackerMap[address]
+                    val name = tracker?.name ?: device?.name ?: deviceId ?: "Unknown Receiver"
                     val displayName = if (isAdvancedMode.value) "$name (RX)" else name
 
                     val greyishBlue = Color(0xFF2C2C62)
@@ -301,7 +321,8 @@ fun HomeScreen(
                                     items(txDevices) { txAddress ->
                                         val txDevice = foundDevices.find { it.address == txAddress }
                                         val txDeviceId = deviceData[txAddress]?.get("DeviceID")
-                                        val txName = txDevice?.name ?: txDeviceId ?: "Unknown Transmitter"
+                                        val txTracker = trackerMap[txAddress]
+                                        val txName = txTracker?.name ?: txDevice?.name ?: txDeviceId ?: "Unknown Transmitter"
                                         val displayTxName = if (isAdvancedMode.value) "$txName (TX)" else txName
 
                                         // Check if TX is related to RX
@@ -438,9 +459,10 @@ fun HomeScreen(
     }
 
     notificationDeviceAddress?.let { address ->
+        val tracker = trackerMap[address]
         val device = foundDevices.find { it.address == address }
         val deviceId = deviceData[address]?.get("DeviceID")
-        val name = device?.name ?: deviceId ?: "Unknown Device"
+        val name = tracker?.name ?: device?.name ?: deviceId ?: "Unknown Device"
         val tagData = tagDataMap[address]
         val tagId = tagData?.id ?: address
 

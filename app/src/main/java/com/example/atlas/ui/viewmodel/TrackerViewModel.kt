@@ -6,6 +6,7 @@ import com.example.atlas.data.TrackerRepository
 import com.example.atlas.data.repository.UserRepository
 import com.example.atlas.models.Tracker
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -105,6 +106,11 @@ class TrackerViewModel @Inject constructor(
             _isLoading.value = false
         }
     }
+
+    fun getTrackersByBleIds(bleIds: List<String>): Flow<List<Tracker>> {
+        return trackerRepository.getTrackersByBleIds(bleIds)
+    }
+
 
     fun addTracker(tracker: Tracker) {
         viewModelScope.launch {
