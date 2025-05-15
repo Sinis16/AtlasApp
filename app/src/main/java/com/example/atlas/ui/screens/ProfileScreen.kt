@@ -2,11 +2,10 @@ package com.example.atlas.ui.screens
 
 import android.util.Log
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -15,7 +14,10 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import com.example.atlas.models.Tracker
+import com.example.atlas.ui.viewmodel.TrackerViewModel
 import com.example.atlas.ui.viewmodel.UserViewModel
+import kotlinx.coroutines.launch
 
 @Composable
 fun ProfileScreen(
@@ -23,12 +25,15 @@ fun ProfileScreen(
     isAdvancedMode: MutableState<Boolean>,
     connectionStates: SnapshotStateMap<String, String>,
     onDisconnect: (String) -> Unit,
-    userViewModel: UserViewModel = hiltViewModel()
+    userViewModel: UserViewModel = hiltViewModel(),
+    trackerViewModel: TrackerViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
     val user by userViewModel.user.collectAsStateWithLifecycle()
     val isAuthenticated by userViewModel.isAuthenticated.collectAsStateWithLifecycle()
     val error by userViewModel.error.collectAsStateWithLifecycle()
+    val trackers by trackerViewModel.getTrackersByUserId(user?.id ?: "").collectAsStateWithLifecycle(initialValue = emptyList())
+    val coroutineScope = rememberCoroutineScope()
 
     // Check session on entry
     LaunchedEffect(Unit) {
@@ -55,48 +60,89 @@ fun ProfileScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.SpaceBetween
     ) {
-        // Spacer to push content toward center
-        Spacer(modifier = Modifier.weight(1f))
-
-        // Loading indicator or user data
-        if (user == null && error == null) {
-            CircularProgressIndicator(modifier = Modifier.padding(vertical = 16.dp))
-        } else user?.let {
-            Column(
-                modifier = Modifier.padding(vertical = 16.dp),
-                horizontalAlignment = Alignment.Start
-            ) {
+        // User info
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.Start
+        ) {
+            if (user == null && error == null) {
+                CircularProgressIndicator(modifier = Modifier.padding(vertical = 16.dp))
+            } else user?.let {
                 Text(
                     text = "Name: ${user!!.name}",
-                    style = MaterialTheme.typography.headlineMedium,
+                    style = MaterialTheme.typography.bodyLarge,
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
                 Text(
                     text = "Email: ${user!!.email}",
-                    style = MaterialTheme.typography.headlineMedium,
-                    modifier = Modifier.padding(bottom = 8.dp)
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.padding(bottom = 16.dp)
                 )
-                if (isAdvancedMode.value) {
-                    Text(
-                        text = "UUID: ${user!!.id}",
-                        style = MaterialTheme.typography.headlineMedium
-                    )
+            }
+
+            // Display error message if any
+            error?.let {
+                Text(
+                    text = it,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+            }
+
+            // My Devices header
+            Text(
+                text = "My Devices",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+
+            // Scrollable device list
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .padding(bottom = 16.dp)
+            ) {
+                items(trackers) { tracker ->
+                    // State for owner name, default to "Unknown"
+                    var ownerName by remember(tracker.user1) { mutableStateOf("Unknown") }
+                    // Fetch owner name asynchronously
+                    tracker.user1?.let { userId ->
+                        LaunchedEffect(userId) {
+                            try {
+                                val user = userViewModel.findUserById(userId)
+                                ownerName = user?.name ?: "Unknown"
+                            } catch (e: Exception) {
+                                Log.e("ProfileScreen", "Failed to fetch owner name for userId: $userId", e)
+                                ownerName = "Unknown"
+                            }
+                        }
+                    }
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp)
+                        ) {
+                            Text(
+                                text = "Device: ${tracker.name}",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                text = "Owner: $ownerName",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                    }
                 }
             }
         }
-
-        // Display error message if any
-        error?.let {
-            Text(
-                text = it,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(bottom = 16.dp)
-            )
-        }
-
-        // Spacer to push buttons to bottom
-        Spacer(modifier = Modifier.weight(1f))
 
         // Buttons at the bottom
         Row(

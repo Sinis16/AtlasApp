@@ -43,6 +43,21 @@ class TrackerRepository @Inject constructor(
         }
     }
 
+    suspend fun getTrackersByUserId(userId: String): List<Tracker> = withContext(Dispatchers.IO) {
+        if (userId.isBlank()) return@withContext emptyList()
+        supabaseClient.from("trackers")
+            .select {
+                filter {
+                    or {
+                        eq("user1", userId)
+                        eq("user2", userId)
+                        eq("user3", userId)
+                    }
+                }
+            }
+            .decodeList<Tracker>()
+    }
+
     suspend fun getTrackerById(trackerId: String): Tracker? = withContext(Dispatchers.IO) {
         runCatching {
             val tracker = supabaseClient.from("trackers").select(

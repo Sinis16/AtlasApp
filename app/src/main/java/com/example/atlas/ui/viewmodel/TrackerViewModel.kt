@@ -9,6 +9,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -20,6 +21,7 @@ class TrackerViewModel @Inject constructor(
     private val _trackers = MutableStateFlow<List<Tracker>>(emptyList())
     val trackers: StateFlow<List<Tracker>> = _trackers.asStateFlow()
 
+    private val _userTrackers = MutableStateFlow<List<Tracker>>(emptyList())
     private val _selectedTracker = MutableStateFlow<Tracker?>(null)
     val selectedTracker: StateFlow<Tracker?> = _selectedTracker.asStateFlow()
 
@@ -49,6 +51,28 @@ class TrackerViewModel @Inject constructor(
                 _isLoading.value = false
             }
         }
+    }
+
+    fun getTrackersByUserId(userId: String): StateFlow<List<Tracker>> {
+        viewModelScope.launch {
+            if (userId.isBlank()) {
+                _userTrackers.value = emptyList()
+                _errorMessage.value = "Invalid user ID"
+                return@launch
+            }
+            _isLoading.value = true
+            try {
+                val trackers = trackerRepository.getTrackersByUserId(userId)
+                _userTrackers.value = trackers
+                _errorMessage.value = null
+            } catch (e: Exception) {
+                _errorMessage.value = "Failed to fetch user trackers: ${e.localizedMessage}"
+                _userTrackers.value = emptyList()
+            } finally {
+                _isLoading.value = false
+            }
+        }
+        return _userTrackers.asStateFlow()
     }
 
     fun getTrackerById(trackerId: String) {
